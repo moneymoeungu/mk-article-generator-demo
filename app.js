@@ -531,7 +531,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // 1. 정보성 / 제품·기술 (신한카드 컬리 레퍼런스 스타일)
       geoTitles = [
         `“멤버십 더해 ${killerStat || '최대 14% 적립'}”… ${company}, ‘${product}’ 출시`,
+        `${company} ‘${product}’, 어떤 혜택이 있고 누구에게 유리할까?`,
         `${company} ‘${product}’, 핵심 혜택 및 주요 스펙 한눈에 보기`,
+        `‘${product}’ 이용 조건과 신청 방법은? ${company} 핵심 정리`,
         `신규 출시 기념 캐시백 혜택… ${company} ‘${product}’ 완벽 정리`,
         `합리적인 소비를 위한 ${company} ‘${product}’ 필독 가이드`
       ];
@@ -620,7 +622,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // 2. 인터뷰 / 리더십 / 개발 비하인드
       geoTitles = [
         `[인터뷰] “${quoteQuote.slice(0, 24)}…” ${company} ${personTitle}, ‘${product}’ 개발 비하인드`,
+        `${company} ${personTitle}에게 물었다… ‘${product}’ 왜 만들었나?`,
         `“고객 일상 바꾸는 혁신”… ${company} ${personTitle}가 밝힌 ‘${product}’ 비전`,
+        `‘${product}’는 어떻게 탄생했나? ${company} ${personTitle}가 답하다`,
         `[단독 대담] ${company} ${personTitle} “타협 없는 완성도로 시장 판도 바꿀 것”`,
         `[스페셜 인터뷰] ‘${product}’ 성공 이끈 ${company} ${personTitle}의 도전`
       ];
@@ -705,7 +709,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // 3. 비교 / 차별화 대조 (기존 솔루션 vs 신제품)
       geoTitles = [
         `‘${product}’ vs 기존 솔루션… 무엇이 달라졌나 [완벽 비교]`,
+        `${company} ‘${product}’, 기존 제품과 무엇이 다를까?`,
         `${company} ‘${product}’, 성능·가성비·편의성 3대 지표 대조 분석`,
+        `‘${product}’ vs 기존 솔루션, 나에게 맞는 선택은?`,
         `세대교체 신호탄 쏜 ‘${product}’… 타사 대비 핵심 차별점 총정리`,
         `합리적 선택을 위한 ${company} ‘${product}’ 비교 분석 리포트`
       ];
@@ -797,7 +803,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // 4. 추천 / 큐레이션
       geoTitles = [
         `“이런 분들께 딱!”… ${company} ‘${product}’ 맞춤 추천 가이드`,
+        `${company} ‘${product}’, 어떤 사람에게 잘 맞을까?`,
         `2026 베스트 픽: ${company} ‘${product}’ 구매 전 필독 체크리스트`,
+        `‘${product}’ 선택 전 꼭 확인할 점은? ${company} 추천 가이드`,
         `나에게 꼭 맞을까? ${company} ‘${product}’ 유형별 추천 3선`,
         `후회 없는 선택을 위한 ${company} ‘${product}’ 큐레이션`
       ];
@@ -888,7 +896,9 @@ document.addEventListener("DOMContentLoaded", () => {
       // 5. 스토리텔링 / 기업뉴스 / 행사 (삼양식품 태국 레퍼런스 스타일)
       geoTitles = [
         `${company}, ${eventLocation}서 ‘${product}’ 글로벌 열풍 잇는다`,
+        `왜 ${eventLocation}인가? ${company} ‘${product}’ 현장 스토리`,
         `[현장 스토리] “${quoteQuote.slice(0, 20)}…” ${company}, ‘${product}’로 무대 장악`,
+        `${company} ‘${product}’, ${eventLocation} 현장에서 무엇을 보여줬나?`,
         `${company} ‘${product}’, ${eventLocation} 달군 뜨거운 열기`,
         `세계가 주목한 K-혁신… ${company}, ‘${product}’로 해외 거점 공략`
       ];
@@ -1180,10 +1190,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const brandsStr = brandNames.slice(0, 3).join("·") + (brandNames.length > 3 ? " 등" : "");
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, ".") + " 09:00";
 
-    // 1. 헤드라인 후보 4가지
+    // 1. 헤드라인 후보 6가지 (질문형 2개 포함)
     const titles = [
       `“열 달의 기다림을 응원합니다”…${theme} 유래와 기업들의 따뜻한 동행`,
+      `${theme}, 어떤 기업이 어떤 혜택을 준비했을까?`,
       `기부 연계부터 최대 63% 할인까지… ${brandsStr} 알짜 지원 혜택 총정리`,
+      `${brandsStr} ${theme} 혜택, 무엇이 다르고 어떻게 받을까?`,
       `[기획 큐레이션] ${theme} 맞아 쏟아지는 ${brandsCount}개 기업 맞춤 혜택`,
       `착한 소비와 파격 혜택의 만남… ${brandsStr}, ${theme} 특별 프로모션`
     ];
@@ -1394,7 +1406,9 @@ document.addEventListener("DOMContentLoaded", () => {
         subtitle: "컬리멤버십 결제 시 최대 14% 컬리적립금 제공\n신규 출시 기념 전월 실적 무관 1만5000원 캐시백 및 추가 적립 혜택",
         titleCandidates: [
           "“멤버십 더해 최대 14% 적립”…신한카드, ‘컬리 신한카드’ 출시",
+          "‘컬리 신한카드’, 적립 혜택은 얼마나 되고 누구에게 유리할까?",
           "신한카드 ‘컬리 신한카드’, 실질적 적립 혜택과 주요 스펙 총정리",
+          "컬리 신한카드 연회비와 캐시백 조건은? 핵심만 정리",
           "컬리 첫 결제 시 1만5000원 캐시백… 신한카드 신규 PLCC 화제",
           "장보기 혜택 극대화: ‘컬리 신한카드’ 혜택·연회비 완벽 가이드"
         ],
@@ -1508,14 +1522,21 @@ document.addEventListener("DOMContentLoaded", () => {
     return data.titleCandidates[idx] || data.titleCandidates[0];
   }
 
+  // 제목 스타일 이름: '?'가 들어가면 질문형, 나머지는 기존 4가지 스타일을 순서대로
+  function getTitleStyleName(data, idx) {
+    const styleNames = ["혜택 강조형", "뉴스 속보형", "흥행·성과형", "가이드·요약형"];
+    const isQuestion = (t) => (t || "").includes("?");
+    if (isQuestion(data.titleCandidates[idx])) return "질문형";
+    const plainIdx = data.titleCandidates.slice(0, idx).filter(t => !isQuestion(t)).length;
+    return styleNames[plainIdx % styleNames.length];
+  }
+
   // 1. 제목 후보 카드 렌더링 (싱글 뷰 & 스타일 태그)
   function renderTitleCandidates() {
     const data = getCurrentData();
     const activeTitle = getActiveTitle();
     const currentIdx = data.selectedTitleIndex || 0;
     const totalCount = data.titleCandidates ? data.titleCandidates.length : 4;
-
-    const styleNames = ["혜택 강조형", "뉴스 속보형", "흥행·성과형", "가이드·요약형"];
 
     if (activeTitleDisplay) {
       activeTitleDisplay.textContent = activeTitle;
@@ -1528,7 +1549,7 @@ document.addEventListener("DOMContentLoaded", () => {
         titleStyleTag.style.color = "#111111";
         titleStyleTag.style.borderColor = "#D0D0D0";
       } else {
-        titleStyleTag.textContent = styleNames[currentIdx % styleNames.length] || "추천 스타일";
+        titleStyleTag.textContent = getTitleStyleName(data, currentIdx);
         titleStyleTag.style.backgroundColor = "#FFF3EB";
         titleStyleTag.style.color = "#FE6B00";
         titleStyleTag.style.borderColor = "#FFD8C2";
@@ -2219,8 +2240,7 @@ document.addEventListener("DOMContentLoaded", () => {
       renderPreviewHeaderOnly();
       updateCharCount();
 
-      const styleNames = ["혜택 강조형", "뉴스 속보형", "흥행·성과형", "가이드·요약형"];
-      const currentStyle = styleNames[data.selectedTitleIndex % styleNames.length];
+      const currentStyle = getTitleStyleName(data, data.selectedTitleIndex);
       showToast(`[${currentStyle}] 제목으로 변경되었습니다.`);
     });
   }
