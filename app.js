@@ -75,6 +75,7 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentLayoutMode = localStorage.getItem("mk_layout_mode") || "horizontal"; // 'horizontal' (가로 분할) | 'vertical' (세로 롤백)
   let isMultiBrandMode = false; // 복수 브랜드 모음 모드 여부
   let multiBrandList = []; // [ { id, brand, campaign, benefit, content } ]
+  let multiBrandIntro = ""; // 복수 브랜드 자료 맨 앞의 도입부 원문
 
   // 레이아웃 모드 적용 함수
   function applyLayoutMode(mode, notify = false) {
@@ -666,8 +667,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 2단계: 브랜드별 단락 분할
     // 빈 줄 2개 이상이거나 [브랜드명] 또는 번호 패턴 기준 분리
-    const rawBlocks = rawText.split(/\n\s*\n\s*\n|\n(?=(?:\[[가-힣A-Za-z0-9\s]+\]|[0-9]+[.)]\s*[가-힣A-Za-z0-9]+|[■●◆▲]\s*[가-힣A-Za-z0-9]+))/);
+    const rawBlocks = rawText.split(/\n\s*\n\s*\n|\n(?=(?:\[[^\]\n]{1,30}\]|[0-9]+[.)]\s*[가-힣A-Za-z0-9]+|[■●◆▲]\s*[가-힣A-Za-z0-9]+))/);
     const brands = [];
+    multiBrandIntro = "";
 
     rawBlocks.forEach((blockStr, idx) => {
       const bText = blockStr.trim();
@@ -675,6 +677,14 @@ document.addEventListener("DOMContentLoaded", () => {
 
       const lines = bText.split("\n").map(l => l.trim()).filter(l => l.length > 0);
       const firstLine = lines[0] || "";
+
+      // 첫 덩어리가 '[기획 보도자료 종합]' 같은 머리말·도입부면 브랜드가 아니라 기사 도입으로 사용
+      const isIntroHeader = /^\[[^\]]*(보도자료|기획|종합|특집|총정리)[^\]]*\]/.test(firstLine);
+      const othersMarked = rawBlocks.slice(idx + 1).some(b => /^\s*[\[■●◆▲]|^\s*[0-9]+[.)]/.test(b));
+      if (idx === 0 && (isIntroHeader || (othersMarked && !/^[\[■●◆▲]|^[0-9]+[.)]/.test(firstLine)))) {
+        multiBrandIntro = (isIntroHeader ? lines.slice(1) : lines).join("\n");
+        return;
+      }
 
       let brand = "";
       let campaign = "";
@@ -703,10 +713,13 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       }
 
-      // 혜택 키워드 추출
-      const benefitMatch = bText.match(/([^\n]*(?:할인|증정|지원|무료|1\+1|특가|기부|캐시백|적립|패키지|키트|선물|공모|이벤트)[^\n]*)/);
-      if (benefitMatch) {
-        benefit = benefitMatch[1].replace(/^[-•✓▲\s*]+/, "").slice(0, 50).trim();
+      // 브랜드 머리줄(소제목으로 쓰임)을 뺀 본문
+      const body = (brand && lines.length > 1 && firstLine.includes(brand)) ? lines.slice(1).join("\n") : bText;
+
+      // 혜택 키워드가 들어간 본문 문장 (비교표용)
+      const benefitSentence = splitSentences(body.split("\n")).find(s => /할인|증정|지원|무료|1\+1|특가|기부|캐시백|적립|패키지|키트|선물|공모|이벤트/.test(s));
+      if (benefitSentence) {
+        benefit = benefitSentence.replace(/^[-•✓▲\s*]+/, "");
       }
 
       brands.push({
@@ -714,7 +727,7 @@ document.addEventListener("DOMContentLoaded", () => {
         brand: brand.slice(0, 15),
         campaign: campaign,
         benefit: benefit,
-        content: bText
+        content: body
       });
     });
 
@@ -835,6 +848,18 @@ document.addEventListener("DOMContentLoaded", () => {
       content: `${josa(theme, "과", "와")} 관련해 ${brandNames.join(", ")} 등 ${brandsCount}개 기업의 주요 내용을 브랜드별로 정리했다.`
     });
 
+    // (1-1) 자료 맨 앞 도입부 원문 (있을 때만)
+    if (multiBrandIntro) {
+      blocks.push({
+        id: "mb_intro",
+        label: "도입 (원문)",
+        type: "text",
+        title: "",
+        enabled: true,
+        content: multiBrandIntro
+      });
+    }
+
     // (2) 각 브랜드별 문단 — 원문 그대로
     multiBrandList.forEach((b, idx) => {
       blocks.push({
@@ -851,8 +876,8 @@ document.addEventListener("DOMContentLoaded", () => {
     const tableHeaders = ["브랜드", "캠페인 / 행사", "주요 내용 (원문)"];
     const tableRows = multiBrandList.map(b => [
       b.brand,
-      (b.campaign || "-").replace(/‘|’|“|”/g, "").slice(0, 18),
-      b.benefit || shorten(firstSentenceOf(b), 50) || "-"
+      (b.campaign || "-").replace(/‘|’|“|”/g, ""),
+      b.benefit || firstSentenceOf(b) || "-"
     ]);
 
     blocks.push({
@@ -1772,6 +1797,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (multiBrandTheme) multiBrandTheme.value = "";
     isMultiBrandMode = false;
     multiBrandList = [];
+    multiBrandIntro = "";
     if (multiBrandPanel) multiBrandPanel.classList.add("hidden");
     if (brandCardsContainer) brandCardsContainer.innerHTML = "";
     showToast("새 자료가 입력되어 예시의 기업명·메모·링크를 비웠습니다.");
@@ -2337,6 +2363,7 @@ KB캐피탈이 임산부의 날을 맞아 복지 사각지대 위기임산부 60
     keyPointInput.value = "";
     isMultiBrandMode = false;
     multiBrandList = [];
+    multiBrandIntro = "";
     if (multiBrandPanel) multiBrandPanel.classList.add("hidden");
     if (brandCardsContainer) brandCardsContainer.innerHTML = "";
     generatedArticleData = null;
