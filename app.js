@@ -250,7 +250,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 원문 분석 도우미: 보도자료에 실제로 있는 문장·수치만 꺼내 쓴다 (지어내지 않기)
   // ==========================================================================
   const RE_AMOUNT = /(?:약\s*|최대\s*|총\s*)?\d[\d,]*(?:\.\d+)?\s*(?:조\s*\d[\d,]*억\s*원|조\s*원|억\s*원|만\s*원|천\s*원|원|달러|유로|%|퍼센트)/g;
-  const RE_COUNT = /\d[\d,]*(?:\.\d+)?\s*(?:척|명|개사|개국|개|곳|배|건|톤|주년|가구|가정)/g;
+  const RE_COUNT = /\d[\d,]*(?:\.\d+)?\s*(?:척|명|개사|개국|개|곳|배|건|톤|주년|가구|가정|종|잔|회|차|호|기|대|편|TB|GB|MB)/g;
   const RE_DATE = /\d{4}년(?:\s*\d{1,2}월)?(?:\s*\d{1,2}일)?|\d{1,2}월\s*\d{1,2}일(?:\s*~\s*(?:\d{1,2}월\s*)?\d{1,2}일)?/g;
   const T_AMOUNT = new RegExp(RE_AMOUNT.source);
   const T_COUNT = new RegExp(RE_COUNT.source);
@@ -283,13 +283,39 @@ document.addEventListener("DOMContentLoaded", () => {
     return (sp > max * 0.5 ? cut.slice(0, sp) : cut).replace(/[,·\s]+$/, "");
   }
 
-  // 리드 문장을 제목용 핵심구로 압축 ("~했다고 31일 밝혔다" 꼬리와 주어 제거)
+  // 리드 문장을 제목용 핵심구로 압축 ("~했다고 13일 밝혔다" 꼬리와 주어·대표자 괄호 제거)
   function toHeadlineCore(sentence, company) {
     let s = (sentence || "").trim().replace(/\.$/, "");
-    s = s.replace(/고\s*(?:\d{1,2}일\s*)?(?:밝혔다|전했다|발표했다|말했다)$/, "");
+    // 문장 앞 주어부에 붙은 '(대표이사 박윤영)' 같은 괄호 먼저 제거
+    s = s.replace(/^([^\s,.]+?\s*\([^)]*\)\s*)+/, (m) => m.replace(/\s*\([^)]*\)/g, ""));
+    s = s.replace(/고\s*(?:지난\s*|오는\s*)?(?:\d{1,2}일\s*)?(?:밝혔다|전했다|발표했다|말했다|알렸다)$/, "");
     s = s.replace(/(?:했|하였|됐|되었)다$/, "").replace(/한다$/, "");
-    if (company) s = s.replace(new RegExp("^" + escapeRegExp(company) + "(?:은|는|이|가|도)?\\s*,?\\s*"), "");
-    s = s.replace(/에 대한 /g, " ").replace(/([가-힣])(?:을|를)\s+([가-힣]+)$/, "$1 $2");
+    if (company) {
+      s = s.replace(new RegExp("^(?:[가-힣A-Za-z0-9·&]+\\s+)?" + escapeRegExp(company) + "(?:\\s*\\([^)]*\\))?(?:은|는|이|가|도|에서)?\\s*,?\\s*"), "");
+    }
+    // 혹시 괄호 제거 후 남은 단독 조사('가 ', '이 ', '은 ', '는 ')가 맨 앞에 있으면 제거
+    s = s.replace(/^(?:은|는|이|가|도)\s+/, "");
+    s = s.replace(/에 대한 /g, " ").replace(/([^\s])(?:을|를)\s+([가-힣]+)$/, "$1 $2");
+    return s.trim();
+  }
+
+  // 한국어 제목 압축: 문장 끝(결론·서술어)을 자르지 않고 앞쪽 수식절만 단계적으로 줄인다
+  function compactHeadline(text, maxLen = 38) {
+    let s = (text || "").trim();
+    if (s.length <= maxLen) return s;
+    const step1 = s.replace(/^.+?(?:협력해|손잡고|맞아|기념해|열린|참가해|통해|바탕으로|위해|앞두고)\s+/, "");
+    if (step1 && step1.length >= 8) s = step1;
+    if (s.length <= maxLen) return s;
+    const step2 = s.replace(/^.+?(?:결합한|포함한|중심의|특화|기반의?|전격)\s+/, "");
+    if (step2 && step2.length >= 8) s = step2;
+    return s;
+  }
+
+  // 부제(서브 헤드라인)용 문장 다듬기: 문장 중간을 자르지 않고 완결된 구문으로 정리
+  function toSubtitleLine(sentence, company) {
+    let s = toHeadlineCore(sentence, company).replace(/\s*\([^)]*\)/g, "").trim();
+    s = s.replace(/^(?:새롭게 선보이는 상품은|이번에 선보이는 상품은|이번 상품은|이번 행사는|이번 캠페인은|이번 공연은)\s*/, "");
+    s = s.replace(/수\s*있다$/, "가능").replace(/(?:이다|된다|있다)$/, "");
     return s.trim();
   }
 
@@ -329,14 +355,15 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // 요약·BLUF용 직답형: "~했다고 31일 밝혔다." → "~했다."
   function toDirectStatement(s) {
-    return (s || "").replace(/고\s*(?:\d{1,2}일\s*)?(?:밝혔다|전했다|발표했다)\.$/, ".");
+    return (s || "").replace(/고\s*(?:\d{1,2}일\s*)?(?:밝혔다|전했다|발표했다|말했다)\.$/, ".");
   }
 
   function detectCompany(brandName, lines, rawText) {
     if (brandName) return brandName;
     for (const line of lines.slice(0, 4)) {
-      const m = line.match(/^([A-Za-z0-9가-힣&·()]{2,20}?)(?:은|는|이|가|,)\s/);
-      if (m && !/^(이번|이|그|한편|또한|특히|올해|지난|최근|오늘|이날)$/.test(m[1])) return m[1];
+      const cleanLine = line.replace(/^\[[^\]]+\]\s*/, "").replace(/\s*\([^)]{1,30}\)/g, "").trim();
+      const m = cleanLine.match(/^([A-Za-z0-9가-힣&·]{2,20}?)(?:은|는|이|가|,)\s/);
+      if (m && !/^(이번|이|그|한편|또한|특히|올해|지난|최근|오늘|이날|새롭게|고객)$/.test(m[1])) return m[1];
     }
     const orgMatch = rawText.match(/([가-힣A-Za-z0-9]+(?:협회|오페라단|예술단|재단|위원회|사업단|센터|카드|식품|전자|플랜트|중공업|조선|화학|제약|바이오|건설|통신|은행|증권|보험|그룹))/);
     return orgMatch ? orgMatch[1] : "해당 기업";
@@ -456,8 +483,27 @@ document.addEventListener("DOMContentLoaded", () => {
       return null;
     }
 
-    // 1. 보도자료 맨 앞의 제목·부제(마침표 없는 짧은 줄)와 본문 분리
-    const lines = rawText.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    // 1. 보도자료 맨 앞의 제목·부제(마침표 없는 짧은 줄)와 본문, 하단 주석(※/사진설명) 분리
+    const rawLines = rawText.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    let extractedPhotoCaption = "";
+    let extractedPhotoDesc = "";
+    const lines = [];
+    rawLines.forEach(l => {
+      const capM = l.match(/^[※*]\s*사진\s*설명\s*[:：]\s*(.+)/);
+      if (capM) {
+        extractedPhotoCaption = capM[1].trim();
+        return;
+      }
+      const descM = l.match(/^\[[^\]]*사진[^\]]*\]\s*(.+)/);
+      if (descM) {
+        extractedPhotoDesc = descM[1].trim();
+        return;
+      }
+      // 보도자료 하단의 '※ Google... 상표입니다', '※참고자료:' 등 부가 주석은 본문에서 분리
+      if (/^[※*]/.test(l)) return;
+      lines.push(l);
+    });
+
     const headLines = [];
     let bodyStart = 0;
     while (bodyStart < lines.length && headLines.length < 3) {
@@ -490,8 +536,10 @@ document.addEventListener("DOMContentLoaded", () => {
     const speaker = personMatch ? `${personMatch[1]} ${personMatch[2]}` : "관계자";
 
     const core = toHeadlineCore(lead, company);
-    const titleCore = core.replace(/\s*\([^)]*\)/g, "");
-    const shortCore = shorten(titleCore, 45);
+    const titleCore = core.replace(/\s*\([^)]*\)/g, "").trim();
+    const fullCore = compactHeadline(titleCore, 56);
+    const shortCore = compactHeadline(titleCore, 40);
+    const briefCore = compactHeadline(titleCore, 26);
     const numStr = numbers[0] || "";
     const findSentence = (re) => sentences.find(s => re.test(s));
     const notFound = "자료에 없음 (확인 필요)";
@@ -511,20 +559,17 @@ document.addEventListener("DOMContentLoaded", () => {
     const today = new Date();
     const dateStr = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')} ${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}`;
 
-    const firstClause = (s) => {
-      const c = toHeadlineCore(s, company).split(/(?:이며|되며|하며|며|고),\s/)[0].replace(/\s*\([^)]*\)/g, "");
-      return c.length >= 12 ? shorten(c, 60) : shorten(toHeadlineCore(s, company), 60);
-    };
     const subtitle = headLines.slice(1).join("\n") ||
-      sentences.slice(1, 3).map(firstClause).join("\n");
+      sentences.slice(1, 3).map(s => toSubtitleLine(s, company)).join("\n");
 
     // ==========================================================================
     // (A) 기사식 광고: 원문 문단 + 문체형 소제목
     // ==========================================================================
     const adTitles = uniq([
-      headLines[0] || `${company}, ${shortCore}`,
+      headLines[0] || `${company}, ${fullCore}`,
+      `${company}, ${shortCore}`,
       numStr ? `${numStr}… ${company}, ${shortCore}` : "",
-      headLines[0] ? `${company}, ${shortCore}` : `[${company}] ${shortCore}`,
+      `[${company}] ${shortCore}`,
       keyPoint ? `${company}, ${keyPoint}` : ""
     ]);
 
@@ -562,23 +607,23 @@ document.addEventListener("DOMContentLoaded", () => {
     if (urls[0]) companyItems.push({ label: "공식 사이트", val: urls[0] });
 
     const fmtQuestion = {
-      info: (numbers.length || dates.length) ? `${company} ${shortCore}, 규모와 일정은?` : `${company} ${shortCore}, 핵심은?`,
-      interview: quotes.length ? `${company} ${speaker}에게 듣는 ${shortCore}, 왜 중요한가?` : `${company} ${shortCore}, 왜 중요한가?`,
-      compare: `${company} ${shortCore}, 무엇이 달라지나?`,
-      recommend: `${company} ${shortCore}, 누가 주목해야 할까?`,
-      story: `${company} ${shortCore}, 어떤 의미일까?`
+      info: (numbers.length || dates.length) ? `${company} ${briefCore}, 주요 혜택과 일정은?` : `${company} ${briefCore}, 핵심은?`,
+      interview: quotes.length ? `${company} ${speaker}에게 듣는 ${briefCore}, 왜 중요한가?` : `${company} ${briefCore}, 왜 중요한가?`,
+      compare: `${company} ${briefCore}, 무엇이 달라지나?`,
+      recommend: `${company} ${briefCore}, 누가 주목해야 할까?`,
+      story: `${company} ${briefCore}, 어떤 의미일까?`
     };
     const fmtLabelTitle = {
-      info: `[한눈에 정리] ${company} ${shortCore}`,
-      interview: quotes.length ? `${company} ${speaker} “${shorten(quotes[0], 40)}”` : `[인사이트] ${company} ${shortCore}`,
-      compare: `${numbers.length ? "[수치로 보기]" : "[비교 정리]"} ${company} ${shortCore}`,
-      recommend: `[체크포인트] ${company} ${shortCore}`,
-      story: `[스토리] ${company} ${shortCore}`
+      info: `[한눈에 정리] ${company}, ${shortCore}`,
+      interview: quotes.length ? `${company} ${speaker} “${shorten(quotes[0], 40)}”` : `[인사이트] ${company}, ${shortCore}`,
+      compare: `${numbers.length ? "[수치로 보기]" : "[비교 정리]"} ${company}, ${shortCore}`,
+      recommend: `[체크포인트] ${company}, ${shortCore}`,
+      story: `[스토리] ${company}, ${shortCore}`
     };
     const fmt = fmtQuestion[currentGeoFormat] ? currentGeoFormat : "story";
 
     const geoTitles = uniq([
-      headLines[0] || `${company}, ${shortCore}`,
+      headLines[0] || `${company}, ${fullCore}`,
       `${company}, ${shortCore}… 핵심 내용은?`,
       headLines[0] ? `${company}, ${shortCore}` : (numStr ? `${numStr}… ${company}, ${shortCore}` : `[종합] ${company}, ${shortCore}`),
       fmtQuestion[fmt],
@@ -698,8 +743,8 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedTitleIndex: 0,
         customTitle: "",
         leadImage: {
-          caption: `${company} 관련 보도사진. <사진제공=${company}>`,
-          desc: `${company} 공식 이미지`
+          caption: extractedPhotoCaption ? `${extractedPhotoCaption} <사진제공=${company}>` : `${company} 관련 보도사진. <사진제공=${company}>`,
+          desc: extractedPhotoDesc || `${company} 공식 이미지`
         },
         blocks: adBlocks
       },
@@ -714,8 +759,8 @@ document.addEventListener("DOMContentLoaded", () => {
         selectedTitleIndex: 0,
         customTitle: "",
         leadImage: {
-          caption: `< 출처 : ${company} >`,
-          desc: `${company} 대표 이미지`
+          caption: extractedPhotoCaption ? `${extractedPhotoCaption} < 출처 : ${company} >` : `< 출처 : ${company} >`,
+          desc: extractedPhotoDesc || `${company} 대표 이미지`
         },
         blocks: geoBlocks
       }
@@ -1368,7 +1413,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyFactHighlight(text) {
     if (!text || typeof text !== "string") return text;
     // 숫자, %, 금액, 날짜, 인원수, 단위 등 핵심 수치 팩트 정규식
-    const factRegex = /(\d+(?:\.\d+)?%|\d+(?:,\d{3})*(?:\.\d+)?(?:조\s*\d+(?:,\d{3})*억\s*원|조\s*원|억\s*원|만\s*원|천\s*원|원|달러|여?\s*명|명|개사|개국|개|곳|배|척|건|톤|가구|주년|\s*TOPS)|\b\d{1,2}월\s*\d{1,2}일(?:\s*~\s*\d{1,2}월?\s*\d{1,2}일)?|\b\d{4}년(?:\s*\d{1,2}월)?)/g;
+    const factRegex = /(\d+(?:\.\d+)?%|\d+(?:,\d{3})*(?:\.\d+)?(?:조\s*\d+(?:,\d{3})*억\s*원|조\s*원|억\s*원|만\s*원|천\s*원|원|달러|여?\s*명|명|개사|개국|개|곳|배|척|건|톤|가구|가정|종|잔|회|차|호|기|대|편|주년|TB|GB|MB|\s*TOPS)|\b\d{1,2}월\s*\d{1,2}일(?:\s*~\s*\d{1,2}월?\s*\d{1,2}일)?|\b\d{4}년(?:\s*\d{1,2}월)?)/g;
     return text.replace(factRegex, '<mark class="fact-highlight" title="팩트 확인: 원문 수치">$1</mark>');
   }
 
