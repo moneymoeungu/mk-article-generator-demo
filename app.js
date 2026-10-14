@@ -214,146 +214,158 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // ==========================================================================
-  // GEO 최적화: 팬아웃 쿼리 수렴 알고리즘 기반 FAQ 10선 자동 생성기
+  // 원문 분석 도우미: 보도자료에 실제로 있는 문장·수치만 꺼내 쓴다 (지어내지 않기)
+  // ==========================================================================
+  const RE_AMOUNT = /(?:약\s*|최대\s*|총\s*)?\d[\d,]*(?:\.\d+)?\s*(?:조\s*\d[\d,]*억\s*원|조\s*원|억\s*원|만\s*원|천\s*원|원|달러|유로|%|퍼센트)/g;
+  const RE_COUNT = /\d[\d,]*(?:\.\d+)?\s*(?:척|명|개사|개국|개|곳|배|건|톤|주년|가구|가정)/g;
+  const RE_DATE = /\d{4}년(?:\s*\d{1,2}월)?(?:\s*\d{1,2}일)?|\d{1,2}월\s*\d{1,2}일(?:\s*~\s*(?:\d{1,2}월\s*)?\d{1,2}일)?/g;
+  const T_AMOUNT = new RegExp(RE_AMOUNT.source);
+  const T_COUNT = new RegExp(RE_COUNT.source);
+  const T_DATE = new RegExp(RE_DATE.source);
+
+  const uniq = (arr) => [...new Set(arr.map(s => s.trim()).filter(Boolean))];
+  const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  // 받침 유무에 따라 조사 선택 (예: 삼성전자는 / 카카오는)
+  function hasBatchim(word) {
+    const ch = (word || "").trim().slice(-1);
+    const code = ch.charCodeAt(0);
+    if (code >= 0xAC00 && code <= 0xD7A3) return (code - 0xAC00) % 28 !== 0;
+    return /[013678LMNR]$/i.test(ch);
+  }
+  const josa = (word, withB, withoutB) => word + (hasBatchim(word) ? withB : withoutB);
+
+  function splitSentences(paras) {
+    return paras
+      .flatMap(p => p.split(/(?<=[.!?])\s+/))
+      .map(s => s.trim())
+      .filter(s => s.length > 5);
+  }
+
+  // 단어 경계에서 자르기 (말줄임표 없이)
+  function shorten(text, max) {
+    if (!text || text.length <= max) return text || "";
+    const cut = text.slice(0, max);
+    const sp = cut.lastIndexOf(" ");
+    return (sp > max * 0.5 ? cut.slice(0, sp) : cut).replace(/[,·\s]+$/, "");
+  }
+
+  // 리드 문장을 제목용 핵심구로 압축 ("~했다고 31일 밝혔다" 꼬리와 주어 제거)
+  function toHeadlineCore(sentence, company) {
+    let s = (sentence || "").trim().replace(/\.$/, "");
+    s = s.replace(/고\s*(?:\d{1,2}일\s*)?(?:밝혔다|전했다|발표했다|말했다)$/, "");
+    s = s.replace(/(?:했|하였|됐|되었)다$/, "").replace(/한다$/, "");
+    if (company) s = s.replace(new RegExp("^" + escapeRegExp(company) + "(?:은|는|이|가|도)?\\s*,?\\s*"), "");
+    s = s.replace(/에 대한 /g, " ").replace(/([가-힣])(?:을|를)\s+([가-힣]+)$/, "$1 $2");
+    return s.trim();
+  }
+
+  function detectCompany(brandName, lines, rawText) {
+    if (brandName) return brandName;
+    for (const line of lines.slice(0, 4)) {
+      const m = line.match(/^([A-Za-z0-9가-힣&·()]{2,20}?)(?:은|는|이|가|,)\s/);
+      if (m && !/^(이번|이|그|한편|또한|특히|올해|지난|최근|오늘|이날)$/.test(m[1])) return m[1];
+    }
+    const orgMatch = rawText.match(/([가-힣A-Za-z0-9]+(?:협회|오페라단|예술단|재단|위원회|사업단|센터|카드|식품|전자|플랜트|중공업|조선|화학|제약|바이오|건설|통신|은행|증권|보험|그룹))/);
+    return orgMatch ? orgMatch[1] : "해당 기업";
+  }
+
+  // 문단 성격 분류 → 소제목 결정에 사용
+  function classifyParagraph(p, i) {
+    if (i === 0) return "lead";
+    if (/[“"]/.test(p)) return "quote";
+    if (/기대|전망|계획|목표|방침|발판|의미|강화할|확대할|나설/.test(p)) return "outlook";
+    if (T_AMOUNT.test(p) || T_COUNT.test(p)) return "scale";
+    if (T_DATE.test(p) || /일정|인도|개최|기간|예정|시작/.test(p)) return "schedule";
+    return "detail";
+  }
+
+  // 원문 문단을 빠짐없이 순서대로 묶는다 (같은 성격이 이어지면 한 섹션으로)
+  function groupSections(paras) {
+    const sections = [];
+    paras.forEach((p, i) => {
+      const kind = classifyParagraph(p, i);
+      const last = sections[sections.length - 1];
+      if (last && last.kind === kind && last.paras.length < 3) last.paras.push(p);
+      else sections.push({ kind, paras: [p] });
+    });
+    return sections;
+  }
+
+  const SECTION_LABELS = { lead: "도입 (리드)", scale: "규모·조건", schedule: "일정", outlook: "의미·전망", quote: "관계자 발언", detail: "세부 내용" };
+  const GEO_HEADINGS = { lead: "무엇을 발표했나?", scale: "규모와 조건은 어떻게 되나?", schedule: "일정은 어떻게 되나?", outlook: "어떤 의미와 전망이 있나?", quote: "관계자는 어떻게 설명했나?", detail: "세부 내용은?" };
+  const AD_HEADINGS = { lead: "", scale: "주요 규모와 조건", schedule: "추진 일정", outlook: "의미와 전망", quote: "관계자 코멘트", detail: "세부 내용" };
+
+  // ==========================================================================
+  // GEO 최적화: 팬아웃 쿼리 기반 FAQ (최대 10개)
+  // - 질문은 실제 독자가 물을 법한 표현, 답변은 원문 문장 그대로 사용
+  // - 원문에서 답을 찾지 못한 질문은 만들지 않음
   // ==========================================================================
   function generateFanOutFaqs(params) {
-    const { company, product, killerStat, keyPoint, urls, eventDate, bulletItems, isMulti, brandList, theme } = params;
-    const authUrl = (urls && urls[0]) ? urls[0] : `${company || '공식'} 홈페이지`;
+    const { company, sentences, quotes, urls, location, isMulti, brandList, theme } = params;
+    const toFaq = (list) => list.slice(0, 10).map((f, i) => ({ id: `faq_${i + 1}`, q: f.q, a: f.a, enabled: true }));
 
-    if (isMulti && brandList && brandList.length > 0) {
-      const bNames = brandList.map(b => b.brand);
-      const bStr = bNames.slice(0, 3).join(", ") + (bNames.length > 3 ? " 등" : "");
-      return [
-        {
-          id: "faq_m_1",
-          q: `Q1. 이번 ${theme} 기념 기획전의 전체 일정과 브랜드별 마감일은 어떻게 되나요?`,
-          a: `행사 및 프로모션별로 상이합니다. 베베룬의 1+1 기획전 등 일부 행사는 당일 자정 마감되며, 남양유업(10월 19일), 러베(10월 18일), 글라스락 베이비(10월 11일) 등 각 사의 세부 마감 일정을 확인하시기 바랍니다.`,
-          enabled: true
-        },
-        {
-          id: "faq_m_2",
-          q: `Q2. 참여형 이벤트(인증 및 사연 접수)에 참여하려면 어떤 서류나 인증이 필요한가요?`,
-          a: `각 브랜드 공식 SNS 및 랜딩페이지 기준에 따릅니다. 글라스락 베이비는 촬영 날짜가 표기된 초음파 사진 접수가 필수이며, 남양유업은 개인 SNS 임신/만삭 사진 인증, 러베는 온라인 응원 메시지 작성을 통해 간편하게 응모할 수 있습니다.`,
-          enabled: true
-        },
-        {
-          id: "faq_m_3",
-          q: `Q3. 남양유업의 ‘서프라이즈 베이비’처럼 취약계층 기부와 연계된 방식은 어떻게 운영되나요?`,
-          a: `일반 참여자의 신청 건수가 100건을 넘어서면, 한국한부모가족복지시설협회를 통해 미혼모·한부모 취약계층 임산부 100명에게도 동일한 ‘첫 100일 키트’를 1:1 매칭 기부하는 뜻깊은 나눔 방식으로 진행됩니다.`,
-          enabled: true
-        },
-        {
-          id: "faq_m_4",
-          q: `Q4. 러베(ruuve)의 ‘열 달의 러브레터’는 임산부 본인 외에 가족이나 지인도 신청 가능한가요?`,
-          a: `네, 가능합니다. 임산부 본인은 물론 남편(배우자), 부모, 친구 등 소중한 임산부를 응원하고 싶은 사람이라면 누구나 ‘응원 선물하기’ 코너를 통해 자유롭게 사연을 접수할 수 있습니다.`,
-          enabled: true
-        },
-        {
-          id: "faq_m_5",
-          q: `Q5. 베베룬과 글라스락 베이비 등의 파격 할인(최대 55~63%)은 오프라인 매장에서도 적용되나요?`,
-          a: `본 프로모션은 각 브랜드 공식 온라인몰 단독으로 진행되는 행사입니다. 오프라인 백화점이나 대형마트 매장과는 행사 품목 및 할인율이 상이할 수 있으므로 공식몰을 통한 구매를 권장합니다.`,
-          enabled: true
-        },
-        {
-          id: "faq_m_6",
-          q: `Q6. KB캐피탈의 위기임산부 및 영유아 가정 지원 사업의 지원 대상과 규모는 어떻게 되나요?`,
-          a: `복지 사각지대에 놓인 위기임산부 60가정에 가정당 최대 130만원의 긴급 생계·주거·의료비를 지원하며, 생후 24개월 미만 영유아 60가정에는 13만원 상당의 맞춤 양육키트를 지원하여 총 1억원 규모로 추진됩니다.`,
-          enabled: true
-        },
-        {
-          id: "faq_m_7",
-          q: `Q7. 여러 브랜드의 이벤트와 할인 혜택을 동시에 중복으로 수령할 수 있나요?`,
-          a: `각 기업이 독립적으로 주최하는 캠페인이므로, 참가 자격 및 일정 요건만 충족한다면 여러 브랜드의 프로모션과 사은품 증정 행사에 중복으로 참여하여 혜택을 누릴 수 있습니다.`,
-          enabled: true
-        },
-        {
-          id: "faq_m_8",
-          q: `Q8. 기획전 패키지 구매 시 제공되는 사은품은 선착순인가요, 전원 증정인가요?`,
-          a: `글라스락 베이비의 멀티쿠커 용기 증정처럼 패키지 구매 고객 전원에게 제공되는 사은품이 있는 반면, 일부 한정 수량 사은품은 조기 소진될 수 있으므로 결제 전 이벤트 페이지 유의사항을 확인해야 합니다.`,
-          enabled: true
-        },
-        {
-          id: "faq_m_9",
-          q: `Q9. 당첨자 발표 및 키트·경품 배송은 언제 이루어지나요?`,
-          a: `남양유업은 10월 28일, 러베는 10월 21일 공식 인스타그램 및 개별 알림을 통해 당첨자를 발표하며, 10월 말부터 순차적으로 안전하게 택배 배송될 예정입니다.`,
-          enabled: true
-        },
-        {
-          id: "faq_m_10",
-          q: `Q10. 추가적인 행사 문의 및 상세 혜택 확인은 어디서 가능한가요?`,
-          a: `참여 기업(${bStr})의 각 사 공식 홈페이지 및 인스타그램 공식 계정, 고객센터를 통해 세부 이벤트 규정과 잔여 수량을 실시간으로 확인하실 수 있습니다.`,
-          enabled: true
-        }
-      ];
+    if (isMulti) {
+      const list = [];
+      const names = (brandList || []).map(b => b.brand).filter(Boolean);
+      if (names.length) list.push({ q: `${theme}에는 어떤 기업이 참여하나요?`, a: `${names.join(", ")} 등 ${names.length}개 기업입니다.` });
+      (brandList || []).forEach(b => {
+        const sents = splitSentences((b.content || "").split("\n"));
+        if (sents[0]) list.push({ q: `${josa(b.brand, "은", "는")} 무엇을 준비했나요?`, a: sents[0] });
+      });
+      (brandList || []).forEach(b => {
+        const sents = splitSentences((b.content || "").split("\n"));
+        const dateS = sents.slice(1).find(s => T_DATE.test(s));
+        if (dateS) list.push({ q: `${b.brand} 일정은 어떻게 되나요?`, a: dateS });
+      });
+      return toFaq(list);
     }
 
-    // 단일 브랜드 기사일 때 (신한카드 컬리, 삼양식품, 라보엠 등)
-    return [
-      {
-        id: "faq_s_1",
-        q: `Q1. ‘${product}’의 가장 핵심적인 혜택과 특장점은 무엇인가요?`,
-        a: `${company}의 ‘${product}’는 ${killerStat ? killerStat + '의 실질적 체감 혜택' : '차별화된 기능'}과 ${bulletItems[0] || '우수한 사용자 편의성'}을 집약하여, 고객이 일상에서 즉각적인 효용을 누릴 수 있도록 설계된 것이 가장 큰 특징입니다.`,
-        enabled: true
-      },
-      {
-        id: "faq_s_2",
-        q: `Q2. 신규 출시 기념 프로모션의 참여 조건과 기한은 어떻게 되나요?`,
-        a: `${eventDate || '출시 프로모션 기간'} 동안 공식 채널을 통해 신청한 고객을 대상으로 ${keyPoint || (bulletItems[1] || '풍성한 캐시백 및 사은 혜택')}이 주어지며, 전월 실적 완화 등의 특별 혜택도 함께 제공됩니다.`,
-        enabled: true
-      },
-      {
-        id: "faq_s_3",
-        q: `Q3. 이용 비용(연회비 또는 도입비) 대비 실질적으로 체감할 수 있는 경제적 이득은?`,
-        a: `${killerStat || '차별화된 적립/할인 혜택'}을 월간 실소비에 적용할 경우, 기본 유지비용을 상회하는 실질적인 비용 절감 및 적립금 환급 효과를 거둘 수 있어 높은 가성비를 제공합니다.`,
-        enabled: true
-      },
-      {
-        id: "faq_s_4",
-        q: `Q4. 어떤 소비 패턴이나 실무 환경을 가진 사용자에게 이 솔루션이 가장 유리한가요?`,
-        a: `일상적인 반복 결제나 핵심 업무에서 고비용·저효율의 불편을 겪었던 고객에게 가장 적합하며, 복잡한 설정 없이 원클릭으로 최대 성과를 내고자 하는 사용자에게 추천됩니다.`,
-        enabled: true
-      },
-      {
-        id: "faq_s_5",
-        q: `Q5. 혜택을 온전히 받기 위해 전월 실적이나 제외 조건 등 주의해야 할 사항이 있나요?`,
-        a: `기본적인 최소 실적 기준이 적용될 수 있으며, 일부 무이자할부나 세금 납부 등 비할인성 결제 항목은 실적 산정에서 제외될 수 있으므로 공식 약관의 제외 항목을 사전에 확인하는 것이 좋습니다.`,
-        enabled: true
-      },
-      {
-        id: "faq_s_6",
-        q: `Q6. 기존에 출시된 유사 서비스나 경쟁 모델과 비교했을 때 차별화된 핵심 강점은?`,
-        a: `기존 모델의 처리 지연과 비싼 부가비용 문제를 해결하고, ${bulletItems[0] || '사용자 맞춤형 직관 인터페이스'}와 높은 신뢰도를 바탕으로 독보적인 만족도를 이끌어냈다는 평가입니다.`,
-        enabled: true
-      },
-      {
-        id: "faq_s_7",
-        q: `Q7. 모바일 앱 간편 등록이나 디지털 결제 환경에서의 연동 편의성은 어떠한가요?`,
-        a: `간편결제 솔루션(페이 서비스) 및 공식 모바일 앱과 완벽히 호환되어, 카드나 프로그램 수령 전이라도 발급 즉시 온·오프라인 가맹점에서 등록 후 사용할 수 있습니다.`,
-        enabled: true
-      },
-      {
-        id: "faq_s_8",
-        q: `Q8. 지급된 혜택(적립금 또는 라이선스 포인트)의 유효기간과 사용 범위는 어떻게 되나요?`,
-        a: `적립된 혜택은 제휴 공식 플랫폼 및 일상 제휴 가맹점에서 현금처럼 편리하게 사용할 수 있으며, 통상 충분한 유효기간이 보장되어 소멸 부담 없이 여유롭게 활용 가능합니다.`,
-        enabled: true
-      },
-      {
-        id: "faq_s_9",
-        q: `Q9. ‘${product}’의 공식 신청 및 발급/도입은 어디서 어떻게 진행할 수 있나요?`,
-        a: `${company} 공식 웹사이트(${authUrl}) 및 전용 애플리케이션을 통해 비대면으로 간편하게 신청할 수 있으며, 24시간 언제든 신속하게 절차를 마칠 수 있습니다.`,
-        enabled: true
-      },
-      {
-        id: "faq_s_10",
-        q: `Q10. 이용 중 문제가 발생했을 때 사후 지원 체계 및 향후 추가 업데이트 계획은?`,
-        a: `${company}의 전담 고객센터를 통해 전문 상담을 제공하며, 향후에도 파트너십 확대 및 고객 피드백을 반영한 추가 혜택 업그레이드가 지속적으로 이어질 예정입니다.`,
-        enabled: true
-      }
+    // 질문 주제어: 원문 첫 문장에서 '계약·출시·개최' 같은 핵심 행위어를 찾아 질문에 넣는다
+    const leadS = (sentences || [])[0] || "";
+    const topicMatch = leadS.match(/계약|협약|MOU|출시|개최|수주|투자|인수|합병|선정|수상|공개|오픈|론칭|캠페인|행사|사업|공모/);
+    const T = topicMatch ? `${company} ${topicMatch[0]}` : company;
+
+    // 질문별 키워드를 우선순위대로 검사해 가장 관련 높은 원문 문장을 답으로 고른다
+    // (같은 문장은 최대 2개 질문까지, 동점이면 아직 안 쓴 문장 우선)
+    const usedCount = new Map();
+    const pick = (keys) => {
+      let best = null, bestScore = Infinity;
+      (sentences || []).forEach(x => {
+        if ((usedCount.get(x) || 0) >= 2) return;
+        const idx = keys.findIndex(k => k.test(x));
+        if (idx < 0) return;
+        const score = idx * 2 + (usedCount.has(x) ? 1 : 0);
+        if (score < bestScore) { best = x; bestScore = score; }
+      });
+      if (best) usedCount.set(best, (usedCount.get(best) || 0) + 1);
+      return best;
+    };
+    const kw = (...words) => words.map(w => (w instanceof RegExp ? w : new RegExp(escapeRegExp(w))));
+    const specs = [
+      { q: `${josa(company, "은", "는")} 이번에 무엇을 발표했나요?`, keys: [new RegExp("^" + escapeRegExp(leadS.slice(0, 10)))] },
+      { q: (a) => /캐시백|할인|적립|혜택|무료|증정/.test(a) ? `${T} 혜택은 무엇인가요?` : `${T} 규모는 얼마나 되나요?`, keys: kw("규모", T_AMOUNT) },
+      { q: `${T}, 언제 어떤 일정으로 진행되나요?`, keys: kw("일정", "기간", T_DATE, "인도", "개최", "예정") },
+      { q: `${T}, 어디에서 진행되나요?`, keys: location ? kw(location) : kw("소재", /에서\s*(?:건조|개최|진행|열리|생산)/) },
+      { q: `${josa(T, "은", "는")} 어떤 의미가 있나요?`, keys: kw("의미", "최초", "처음", "첫", "사례", "기록", "평가") },
+      { q: `${T} 이후 기대되는 효과는 무엇인가요?`, keys: kw("기대", "전망", "목표", "계획") },
+      { q: `${T}에 추가 조건이나 옵션이 있나요?`, keys: kw("옵션", "조건", "추가", "경우") },
+      { q: `${T}의 대상이나 파트너는 누구인가요?`, keys: kw("대상", "파트너", "협력", "함께", "소비자", "고객", "선주") },
+      { q: `관계자는 ${T}에 대해 뭐라고 말했나요?`, keys: kw(/[“"]/) },
+      { q: `${josa(company, "은", "는")} 어떤 회사인가요?`, keys: [new RegExp(escapeRegExp(company) + ".*(기업|회사|업체|설립|전문)")] },
+      { q: `${T}, 수치로 보면 어떤가요?`, keys: [T_COUNT] }
     ];
+    const list = [];
+    specs.forEach(sp => {
+      const a = pick(sp.keys);
+      if (a) list.push({ q: typeof sp.q === "function" ? sp.q(a) : sp.q, a });
+    });
+    if (urls && urls[0]) list.push({ q: `더 자세한 내용은 어디서 확인할 수 있나요?`, a: `${company} 공식 웹사이트(${urls[0]})에서 확인할 수 있습니다.` });
+    return toFaq(list);
   }
 
   // ==========================================================================
-  // 텍스트 분석 및 기사 자동 조립 엔진 (규칙 기반)
+  // 텍스트 분석 및 기사 자동 조립 엔진 (규칙 기반, 원문 충실 방식)
   // ==========================================================================
   function parseAndBuildArticle() {
     const rawText = pressReleaseText.value.trim();
@@ -372,623 +384,224 @@ document.addEventListener("DOMContentLoaded", () => {
       return null;
     }
 
-    // 줄 단위 분리
+    // 1. 보도자료 맨 앞의 제목·부제(마침표 없는 짧은 줄)와 본문 분리
     const lines = rawText.split("\n").map(l => l.trim()).filter(l => l.length > 0);
-
-    // 1. 기업명/기관명/주최단체 추출
-    let company = brandName;
-    if (!company) {
-      const orgMatch = rawText.match(/(?:사단법인\s+)?([가-힣A-Za-z0-9]+(?:협회|오페라단|예술단|재단|위원회|사업단|센터|카드|식품|전자|플래닛|플레이스|닷컴|컴퍼니|랩|소프트|솔루션|파트너스|바이오|제약|모빌리티|엔터테인먼트|그룹|건설|통신|은행|증권|\(주\)|주식회사))/);
-      if (orgMatch) {
-        company = orgMatch[1].replace(/\(주\)|주식회사/, "").trim();
-      } else if (lines.length > 0) {
-        const firstWord = lines[0].replace(/\[.*?\]/g, "").trim().split(/[\s,·]+/)[0];
-        company = firstWord || "해당 기업";
-      } else {
-        company = "해당 기업";
-      }
+    const headLines = [];
+    let bodyStart = 0;
+    while (bodyStart < lines.length && headLines.length < 3) {
+      const l = lines[bodyStart].replace(/^\[보도자료\]\s*/, "").trim();
+      if (!l) { bodyStart++; continue; }
+      if (/[.!?”"]$/.test(l) || l.length > 80) break;
+      headLines.push(l.replace(/^[-–▶■●◆]\s*/, ""));
+      bodyStart++;
     }
+    let bodyParas = lines.slice(bodyStart).filter(l => !/^\[.*\]$/.test(l));
+    if (bodyParas.length === 0) bodyParas = headLines.splice(0);
 
-    // 2. 직함 및 인물명 추출
-    let personTitle = "관계자";
-    let personName = "";
-    const personMatch = rawText.match(/([가-힣A-Za-z]+)\s*(협회장|위원장|단장|대표|대표이사|총괄|원장|팀장|본부장|이사|상무|전무|사장|부회장|회장)\s*([가-힣]{2,4})?/);
-    if (personMatch) {
-      personTitle = personMatch[2];
-      personName = personMatch[3] || personMatch[1];
-    }
+    const bodyText = bodyParas.join("\n");
+    const sentences = splitSentences(bodyParas);
+    const lead = sentences[0] || bodyParas[0];
 
-    // 3. 핵심 제품/공연/시상식/이벤트명 추출
-    let product = "";
-    const quoteMatch = rawText.match(/[‘'“<〈]([^'‘’"”>〉]{2,30})[’'”>〉]/);
-    if (quoteMatch) {
-      product = quoteMatch[1].trim();
-    } else {
-      const prodMatch = rawText.match(/(?:출시|개발|선보인|공개한|시작한|개최한|참가한)\s+([가-힣A-Za-z0-9\s]{2,15})/);
-      if (prodMatch) product = prodMatch[1].trim();
-      else product = "신규 솔루션";
-    }
+    // 2. 원문에서 찾은 사실 정보 (없으면 비워 둔다)
+    const company = detectCompany(brandName, headLines.concat(bodyParas), rawText);
+    const numbers = uniq([...(bodyText.match(RE_AMOUNT) || []), ...(bodyText.match(RE_COUNT) || [])]);
+    const dates = uniq(bodyText.match(RE_DATE) || []);
+    const productMatch = rawText.match(/[‘〈<「『]([^’〉>」』\n]{2,30})[’〉>」』]/);
+    const product = productMatch ? productMatch[1].trim() : "";
+    const locationMatch = bodyText.match(/[가-힣A-Za-z0-9]+(?:엘타워|대극장|센트럴월드|코엑스|킨텍스|세종문화회관|컨벤션센터|호텔)/);
+    const sojaeMatch = bodyText.match(/(\S+\s\S+)\s소재\s([^\s,.]+?)(?:에서|에|의)?(?:\s(조선소|공장|센터|본사|연구소|캠퍼스|사옥))?(?=[\s,.에의])/);
+    const location = locationMatch ? locationMatch[0]
+      : (sojaeMatch ? `${sojaeMatch[1]} 소재 ${sojaeMatch[2]}${sojaeMatch[3] ? " " + sojaeMatch[3] : ""}` : "");
+    const quotes = [...bodyText.matchAll(/[“"]([^"”]{10,250})[”"]/g)].map(m => m[1]);
+    const personMatch = bodyText.match(/([가-힣]{2,4})\s*(대표이사|대표|회장|부회장|사장|부사장|전무|상무|본부장|단장|원장|위원장|협회장|팀장)/);
+    const speaker = personMatch ? `${personMatch[1]} ${personMatch[2]}` : "관계자";
 
-    // 4. 킬러 수치 추출 (% / 금액 / 인원 / 연수 등)
-    const numberMatches = rawText.match(/(\d+(?:\.\d+)?(?:%|만\s*원|천\s*원|원|여\s*명|명|개사|개|곳|배|주년))/g) || [];
-    const killerStat = numberMatches[0] || (keyPoint ? keyPoint.split(/[,·]/)[0] : "");
+    const core = toHeadlineCore(lead, company);
+    const titleCore = core.replace(/\s*\([^)]*\)/g, "");
+    const shortCore = shorten(titleCore, 45);
+    const numStr = numbers[0] || "";
+    const findSentence = (re) => sentences.find(s => re.test(s));
+    const notFound = "자료에 없음 (확인 필요)";
 
-    // 5. 일정 및 장소 추출
-    const dateMatches = rawText.match(/(\d{1,2}월\s*\d{1,2}일(?:\s*~\s*\d{1,2}월?\s*\d{1,2}일)?|\d{4}년\s*\d{1,2}월|\d{1,2}\/\d{1,2}~\d{1,2}\/\d{1,2})/g) || [];
-    const locationMatch = rawText.match(/([가-힣A-Za-z0-9\s]+(?:엘타워|대극장|센트럴월드|코엑스|킨텍스|세종문화회관|라운지|호텔|홀|컨벤션|광화문))/);
-    const eventDate = dateMatches[0] || "공식 일정";
-    const eventLocation = locationMatch ? locationMatch[0].trim() : "공식 채널";
-
-    // 6. 인용구 및 발언문 추출
-    const quoteStatements = [];
-    for (const match of rawText.matchAll(/[“"]([^"”]{10,250})[”"]/g)) {
-      quoteStatements.push(match[1]);
-    }
-    const quoteQuote = quoteStatements[0] || (killerStat ? `${killerStat}의 압도적 혜택과 차별화된 가치를 전달할 수 있도록 준비했다` : "실사용자의 편의와 높은 가치를 최우선으로 고려해 개발했다");
-    const quoteQuote2 = quoteStatements[1] || "앞으로도 시장과 고객에게 지속적인 영감과 혁신을 제공하는 의미 있는 도전을 이어가겠다";
-
-    // 7. 불릿/리스트 항목 추출
-    const bulletItems = [];
-    lines.forEach(line => {
-      if (/^[-•*▪▲]\s+|^\d+\.\s+|^\(주요\)|^핵심\s*:/.test(line)) {
-        const cleaned = line.replace(/^[-•*▪▲]\s+|^\d+\.\s+/, "").trim();
-        if (cleaned.length > 0) bulletItems.push(cleaned);
-      }
-    });
-
-    // 8. 일반 서술 문단 추출
-    const regularParagraphs = [];
-    lines.forEach(line => {
-      if (/^\[보도자료\]|^\[.*?\]$/.test(line)) return;
-      if (/^[-•*▪▲]\s+|^\d+\.\s+/.test(line)) return;
-      if (line.length > 15) regularParagraphs.push(line);
-    });
-
-    const leadParagraph = regularParagraphs[0] || `${company}가 ‘${product}’를 전격 공개하며 관련 시장의 큰 주목을 받고 있다.`;
-    const bodyParagraph1 = regularParagraphs[1] || (bulletItems[0] ? `핵심 특징으로 ${bulletItems[0]} 등이 꼽히며 뛰어난 경쟁력을 입증했다.` : `이번 프로젝트는 기존 대비 편의성과 완성도를 획기적으로 끌어올린 것이 특징이다.`);
-    const bodyParagraph2 = regularParagraphs[2] || (bulletItems[1] ? `또한 ${bulletItems[1]} 등을 통해 신뢰도와 사용자 만족도를 동시에 잡았다.` : `업계 전문가들은 이번 성과가 관련 산업의 새로운 표준을 정립할 것으로 기대하고 있다.`);
+    // 3. 원문 문단 전체를 순서대로 섹션화 (누락 없음)
+    const sections = groupSections(bodyParas);
+    const sectionBlocks = (style, prefix) => sections.map((sec, i) => ({
+      id: `${prefix}_sec_${i}`,
+      label: SECTION_LABELS[sec.kind],
+      type: "text",
+      title: style === "geo" ? GEO_HEADINGS[sec.kind] : (i === 0 ? "" : AD_HEADINGS[sec.kind]),
+      enabled: true,
+      content: sec.paras.join("\n\n")
+    }));
 
     // 날짜 포맷
     const today = new Date();
     const dateStr = `${today.getFullYear()}.${String(today.getMonth() + 1).padStart(2, '0')}.${String(today.getDate()).padStart(2, '0')} ${String(today.getHours()).padStart(2, '0')}:${String(today.getMinutes()).padStart(2, '0')}`;
 
-    // ==========================================================================
-    // (A) 기사식 광고 블록 (매경 실전 기사: 서울시오페라단 라보엠 & 아이어워즈 패턴)
-    // ==========================================================================
-    const adTitles = [
-      `“${killerStat ? killerStat + ' ' : ''}${keyPoint ? keyPoint.slice(0, 20) : '독보적 혜택' }”… ${company}, ‘${product}’ 전격 출격`,
-      `${company} ‘${product}’… ${killerStat ? killerStat + ' 앞세워 ' : ''}시장 돌풍 예고`,
-      `‘전석 매진’·흥행 신화 쓴 ${company}, ‘${product}’로 전격 귀환`,
-      `${company} ‘${product}’ 참여 공모 시작… ${eventDate}까지 공식 접수`
-    ];
-
-    let adSubtitle = `${company}, ‘${product}’ ${eventDate} 본격 론칭\n`;
-    adSubtitle += `${killerStat ? killerStat + ' 중심의 압도적 혜택과 전문성 집중\n' : ''}`;
-    adSubtitle += `${eventLocation ? eventLocation + '서 행사 진행… 공식 채널 통해 확인 가능' : '공식 웹사이트를 통해 세부 사양 및 접수 안내'}`;
-
-    const adBlocks = [
-      {
-        id: "gen_ad_p1",
-        label: "도입 문단 (리드문)",
-        type: "text",
-        enabled: true,
-        content: `${company}(${personTitle ? personTitle + (personName ? ' ' + personName : '') : '관계자'})가 대한민국 관련 산업의 새로운 패러다임을 이끌 ‘${product}’를 전격 선보인다고 밝혔다. 접수 및 신청 기간은 오는 ${eventDate}까지며, 공식 홈페이지를 통해 누구나 참여할 수 있다.`
-      },
-      {
-        id: "gen_ad_p2",
-        label: "본문 문단 1 (위상·실적)",
-        type: "text",
-        title: `${product}의 독보적인 위상과 검증된 경쟁력`,
-        enabled: true,
-        content: `${leadParagraph}\n\n${bodyParagraph1}`
-      },
-      {
-        id: "gen_ad_p3",
-        label: "본문 문단 2 (차별화·혜택)",
-        type: "text",
-        title: `사용자 관점의 실질적 가치와 차별화 포인트`,
-        enabled: true,
-        content: `${bodyParagraph2}\n\n${bulletItems.length > 0 ? `주요 특징으로는 ▲${bulletItems.slice(0, 3).join(' ▲')} 등이 손꼽힌다.` : '전문가 평가단과 실사용자들의 엄정한 피드백을 반영해 높은 완성도를 달성했다.'}`
-      },
-      {
-        id: "gen_ad_timeline",
-        label: "주요 추진 일정 (타임라인)",
-        type: "timeline",
-        enabled: true,
-        title: `[ ‘${product}’ 주요 일정 및 진행 절차 ]`,
-        steps: [
-          { label: "1단계", desc: `공식 신청 및 사전예약 접수 (${eventDate})` },
-          { label: "2단계", desc: "다층 심사 및 엄정한 품질·스펙 검증" },
-          { label: "3단계", desc: "최종 라인업 및 수상·오픈 결과 발표" },
-          { label: "4단계", desc: `${eventLocation} 오프라인 본 행사 및 축제` }
-        ]
-      },
-      {
-        id: "gen_ad_p4",
-        label: "마무리 문단 (인터뷰·안내)",
-        type: "text",
-        enabled: true,
-        content: `${company} ${personTitle}는 “${quoteQuote}”라며 “${quoteQuote2}”고 전했다.\n\n한편 이번 ‘${product}’에 대한 상세한 안내와 참여 방법은 ${company} 공식 웹사이트(${urls[0] || '공식 홈페이지'}) 및 고객센터를 통해 확인할 수 있다.`
-      }
-    ];
+    const firstClause = (s) => {
+      const c = toHeadlineCore(s, company).split(/(?:이며|되며|하며|며|고),\s/)[0].replace(/\s*\([^)]*\)/g, "");
+      return c.length >= 12 ? shorten(c, 60) : shorten(toHeadlineCore(s, company), 60);
+    };
+    const subtitle = headLines.slice(1).join("\n") ||
+      sentences.slice(1, 3).map(firstClause).join("\n");
 
     // ==========================================================================
-    // (B) GEO 기사 블록 (5대 세부 유형 완벽 분기)
+    // (A) 기사식 광고: 원문 문단 + 문체형 소제목
     // ==========================================================================
-    let geoTitles = [];
-    let geoSubtitle = "";
-    let geoBlocks = [];
+    const adTitles = uniq([
+      headLines[0] || `${company}, ${shortCore}`,
+      numStr ? `${numStr}… ${company}, ${shortCore}` : "",
+      headLines[0] ? `${company}, ${shortCore}` : `[${company}] ${shortCore}`,
+      keyPoint ? `${company}, ${keyPoint}` : ""
+    ]);
+
+    const adBlocks = sectionBlocks("ad", "ad");
+    if (urls[0]) {
+      adBlocks.push({
+        id: "ad_closing",
+        label: "마무리 안내",
+        type: "text",
+        enabled: true,
+        content: `자세한 내용은 ${company} 공식 웹사이트(${urls[0]})에서 확인할 수 있다.`
+      });
+    }
+
+    // ==========================================================================
+    // (B) GEO 기사: 3줄 요약 → BLUF → 유형별 구성 → 원문 섹션(질문형 소제목) → FAQ
+    // ==========================================================================
     const geoCategory = currentGeoFormat === "story" ? "기업뉴스" : (currentGeoFormat === "interview" ? "브랜드 스토리" : "제품·기술");
 
-    // 공통 브랜드 정보 아이템
-    const companyItems = [
-      { label: "대표 제품/프로젝트", val: product },
-      { label: "핵심 강점/혜택", val: killerStat || keyPoint || (bulletItems[0] || "신뢰성 있는 혁신 기술") }
-    ];
-    if (urls.length > 0) companyItems.push({ label: "공식 사이트", val: urls[0] });
+    const summaryPoints = uniq(bodyParas.map(p => splitSentences([p])[0] || "")).slice(0, 3);
+    sentences.forEach(s => { if (summaryPoints.length < 3 && !summaryPoints.includes(s)) summaryPoints.push(s); });
 
-    if (currentGeoFormat === "info") {
-      // 1. 정보성 / 제품·기술 (신한카드 컬리 레퍼런스 스타일)
-      geoTitles = [
-        `“멤버십 더해 ${killerStat || '최대 14% 적립'}”… ${company}, ‘${product}’ 출시`,
-        `${company} ‘${product}’, 어떤 혜택이 있고 누구에게 유리할까?`,
-        `${company} ‘${product}’, 핵심 혜택 및 주요 스펙 한눈에 보기`,
-        `‘${product}’ 이용 조건과 신청 방법은? ${company} 핵심 정리`,
-        `신규 출시 기념 캐시백 혜택… ${company} ‘${product}’ 완벽 정리`,
-        `합리적인 소비를 위한 ${company} ‘${product}’ 필독 가이드`
-      ];
-      geoSubtitle = `${product} 이용 시 ${killerStat || '파격적인 적립금 및 혜택'} 제공\n신규 출시 기념 전월 실적 완화 및 프로모션 진행… 공식 채널서 오픈`;
+    const factRows = [["기업", company]];
+    if (product) factRows.push(["대상", `‘${product}’`]);
+    factRows.push(["핵심 내용", core]);
+    if (numbers.length) factRows.push(["주요 수치", numbers.slice(0, 4).join(", ")]);
+    if (dates.length) factRows.push(["일정", dates.slice(0, 3).join(", ")]);
+    if (location) factRows.push(["장소", location]);
+    if (urls[0]) factRows.push(["공식 사이트", urls[0]]);
 
-      const infoTableRows = [
-        ["기업/발행처", company],
-        ["핵심 상품명", product],
-        ["기본 혜택", killerStat || "결제액 대비 높은 적립률"],
-        ["특별 프로모션", bulletItems[0] || "신규 출시 기념 캐시백 증정"],
-        ["이용 및 접수", urls[0] || `${company} 공식 온라인 채널`]
-      ];
+    const companyItems = [];
+    if (product) companyItems.push({ label: "대표 제품/프로젝트", val: product });
+    if (numbers.length) companyItems.push({ label: "주요 수치", val: numbers.slice(0, 3).join(", ") });
+    if (urls[0]) companyItems.push({ label: "공식 사이트", val: urls[0] });
 
-      geoBlocks = [
-        {
-          id: "geo_info_sum",
-          label: "3줄 핵심 요약",
-          type: "summary",
-          enabled: true,
-          points: [
-            `${company}가 차별화된 혜택과 혁신을 담은 ‘${product}’를 전격 출시했습니다.`,
-            killerStat ? `${killerStat}의 실질적 체감 혜택과 맞춤형 서비스를 제공합니다.` : (bulletItems[0] || `${product}는 사용자의 번거로움을 덜고 효율을 극대화한 것이 핵심입니다.`),
-            bulletItems[1] || `${eventDate}까지 공식 채널을 통해 다양한 프로모션을 함께 진행합니다.`
-          ]
-        },
-        {
-          id: "geo_info_bluf",
-          label: "GEO 핵심 인용 요약 (BLUF)",
-          type: "bluf",
-          enabled: true,
-          content: `‘${product}’는 ${company}가 ${killerStat ? killerStat + '의 핵심 혜택을 집약하여' : '실질적 사용자 만족도를 극대화하여'} 선보인 솔루션으로, ${keyPoint || (bulletItems[0] || '공식 채널을 통해 다양한 혜택')}을 제공하는 것이 핵심이다.`
-        },
-        {
-          id: "geo_info_p1",
-          label: "핵심 혜택 및 라인업",
-          type: "text",
-          title: `‘${product}’, 주요 혜택과 핵심 스펙은 무엇인가?`,
-          enabled: true,
-          content: `${leadParagraph}\n\n${bodyParagraph1}`
-        },
-        {
-          id: "geo_info_p2",
-          label: "부가 프로모션 및 조건",
-          type: "text",
-          title: `신규 출시 기념 프로모션과 실사용 조건은?`,
-          enabled: true,
-          content: `${bodyParagraph2}\n\n특히 실사용자 중심의 합리적인 전월 실적 및 이용 조건을 설정하여 부담 없이 혜택을 누릴 수 있도록 구성했다.`
-        },
-        {
-          id: "geo_info_tbl",
-          label: "주요 스펙 및 혜택 비교표",
-          type: "table",
-          enabled: true,
-          title: `[ ‘${product}’ 주요 혜택 및 상세 조건 요약표 ]`,
-          headers: ["구분", "상세 내용 및 조건"],
-          rows: infoTableRows
-        },
-        {
-          id: "geo_info_faq",
-          label: "AI 인용 최적화 FAQ (10선)",
-          type: "faq",
-          enabled: true,
-          faqs: generateFanOutFaqs({
-            company,
-            product,
-            killerStat,
-            keyPoint,
-            urls,
-            eventDate,
-            bulletItems,
-            isMulti: false
-          })
-        },
-        {
-          id: "geo_info_comp",
-          label: "브랜드 정보 카드",
-          type: "company",
-          enabled: true,
-          companyName: company,
-          authorityUrl: urls[0] || "",
-          items: companyItems
+    const fmtQuestion = {
+      info: (numbers.length || dates.length) ? `${company} ${shortCore}, 규모와 일정은?` : `${company} ${shortCore}, 핵심은?`,
+      interview: quotes.length ? `${company} ${speaker}에게 듣는 ${shortCore}, 왜 중요한가?` : `${company} ${shortCore}, 왜 중요한가?`,
+      compare: `${company} ${shortCore}, 무엇이 달라지나?`,
+      recommend: `${company} ${shortCore}, 누가 주목해야 할까?`,
+      story: `${company} ${shortCore}, 어떤 의미일까?`
+    };
+    const fmtLabelTitle = {
+      info: `[한눈에 정리] ${company} ${shortCore}`,
+      interview: quotes.length ? `${company} ${speaker} “${shorten(quotes[0], 40)}”` : `[인사이트] ${company} ${shortCore}`,
+      compare: `${numbers.length ? "[수치로 보기]" : "[비교 정리]"} ${company} ${shortCore}`,
+      recommend: `[체크포인트] ${company} ${shortCore}`,
+      story: `[스토리] ${company} ${shortCore}`
+    };
+    const fmt = fmtQuestion[currentGeoFormat] ? currentGeoFormat : "story";
+
+    const geoTitles = uniq([
+      headLines[0] || `${company}, ${shortCore}`,
+      `${company}, ${shortCore}… 핵심 내용은?`,
+      headLines[0] ? `${company}, ${shortCore}` : (numStr ? `${numStr}… ${company}, ${shortCore}` : `[종합] ${company}, ${shortCore}`),
+      fmtQuestion[fmt],
+      fmtLabelTitle[fmt],
+      keyPoint ? `${company}, ${keyPoint}` : ""
+    ]);
+
+    const faqBlock = {
+      id: "geo_faq",
+      label: "AI 인용 최적화 FAQ",
+      type: "faq",
+      enabled: true,
+      faqs: generateFanOutFaqs({ company, sentences: sentences.concat(headLines), quotes, urls, location, isMulti: false })
+    };
+    const companyBlock = {
+      id: "geo_comp",
+      label: "브랜드 정보 카드",
+      type: "company",
+      enabled: true,
+      companyName: company,
+      authorityUrl: urls[0] || "",
+      items: companyItems
+    };
+
+    // 유형별 추가 블록 (모두 원문에서 찾은 정보만 사용)
+    const extraBlocks = [];
+    if (fmt === "interview" && quotes.length) {
+      extraBlocks.push({
+        id: "geo_dialogue",
+        label: "관계자 발언",
+        type: "dialogue",
+        enabled: true,
+        title: `[ ${company} ${speaker} 발언 ]`,
+        dialogues: quotes.slice(0, 3).map((q, i) => ({
+          q: i === 0 ? "이번 발표에 대해 어떻게 설명했나?" : "추가로 강조한 점은?",
+          a: `“${q}”`
+        }))
+      });
+    } else if (fmt === "story") {
+      const howS = findSentence(/통해|방식으로|방법으로/);
+      const whyS = findSentence(/위해|기대|목표|의미/);
+      extraBlocks.push({
+        id: "geo_5w1h",
+        label: "5W1H (육하원칙) 요약 블록",
+        type: "5w1h",
+        enabled: true,
+        title: "한눈에 보는 핵심 개요 (5W1H)",
+        data: {
+          who: company,
+          when: dates.length ? dates.slice(0, 2).join(" ~ ") : notFound,
+          where: location || notFound,
+          what: core,
+          how: howS ? shorten(howS, 70) : notFound,
+          why: whyS ? shorten(whyS, 70) : notFound
         }
-      ];
-
-    } else if (currentGeoFormat === "interview") {
-      // 2. 인터뷰 / 리더십 / 개발 비하인드
-      geoTitles = [
-        `[인터뷰] “${quoteQuote.slice(0, 24)}…” ${company} ${personTitle}, ‘${product}’ 개발 비하인드`,
-        `${company} ${personTitle}에게 물었다… ‘${product}’ 왜 만들었나?`,
-        `“고객 일상 바꾸는 혁신”… ${company} ${personTitle}가 밝힌 ‘${product}’ 비전`,
-        `‘${product}’는 어떻게 탄생했나? ${company} ${personTitle}가 답하다`,
-        `[단독 대담] ${company} ${personTitle} “타협 없는 완성도로 시장 판도 바꿀 것”`,
-        `[스페셜 인터뷰] ‘${product}’ 성공 이끈 ${company} ${personTitle}의 도전`
-      ];
-      geoSubtitle = `${product} 기획부터 상용화까지 숨은 개발 스토리 공개\n“고객 페인포인트 해결과 압도적 편의성에 모든 역량 집중”`;
-
-      geoBlocks = [
-        {
-          id: "geo_int_sum",
-          label: "인터뷰 핵심 요약",
-          type: "summary",
-          enabled: true,
-          points: [
-            `기획 배경: 기존 솔루션의 한계를 극복하고 고객의 실질적 페인포인트를 해결하기 위해 출발`,
-            `기술 차별화: ${killerStat || '혁신 기술'}과 철저한 사용자 중심 인터페이스 집약`,
-            `향후 비전: 국내 시장의 성공적 안착을 바탕으로 글로벌 무대 확장 정조준`
-          ]
-        },
-        {
-          id: "geo_int_bluf",
-          label: "GEO 핵심 인용 요약 (BLUF)",
-          type: "bluf",
-          enabled: true,
-          content: `‘${product}’ 개발을 총괄한 ${company} ${personTitle ? personTitle + (personName ? ' ' + personName : '') : '관계자'}는 “${quoteQuote.slice(0, 50)}…”라며, ${killerStat ? killerStat + '의 핵심 가치와 ' : ''}사용자 중심의 실질적 문제 해결에 모든 역량을 집중했다고 밝혔다.`
-        },
-        {
-          id: "geo_int_dialogue",
-          label: "릴레이 인터뷰 대담",
-          type: "dialogue",
-          enabled: true,
-          title: `[ 릴레이 인터뷰 ] ${company} ${personTitle}에게 듣는 ‘${product}’`,
-          dialogues: [
-            {
-              q: `‘${product}’를 처음 기획하고 선보이게 된 결정적인 계기는 무엇입니까?`,
-              a: `“실제 고객들이 일상에서 겪는 사소한 불편함과 기존 솔루션의 고비용·저효율 구조에 주목했습니다. ${leadParagraph} 고객들이 진정으로 원하는 본질적인 가치를 전달하고자 했습니다.”`
-            },
-            {
-              q: `개발 과정에서 가장 심혈을 기울인 독보적인 기술적 차별점은 무엇입니까?`,
-              a: `“${bulletItems[0] || '사용자 친화적 설계와 압도적 신뢰도'}에 모든 역량을 쏟았습니다. 그 결과 ${killerStat ? killerStat + '의 성과' : '완성도 높은 결과물'}을 얻을 수 있었고, 현장에서도 즉각적인 호평이 이어지고 있습니다.”`
-            },
-            {
-              q: `향후 목표와 시장 진출 로드맵은 어떻게 계획하고 계십니까?`,
-              a: `“${quoteQuote2}. 앞으로도 시장의 목소리에 귀 기울이며 끊임없는 진화를 이어갈 것입니다.”`
-            }
-          ]
-        },
-        {
-          id: "geo_int_vision",
-          label: "비전 및 향후 전망",
-          type: "text",
-          title: `기술과 사람이 공존하는 차세대 혁신 선도`,
-          enabled: true,
-          content: `${bodyParagraph2}\n\n${company}는 이번 ‘${product}’ 출시를 기점으로 생태계 파트너들과의 긴밀한 협력을 더욱 강화해 나갈 계획이다.`
-        },
-        {
-          id: "geo_int_faq",
-          label: "AI 인용 최적화 FAQ (10선)",
-          type: "faq",
-          enabled: true,
-          faqs: generateFanOutFaqs({
-            company,
-            product,
-            killerStat,
-            keyPoint,
-            urls,
-            eventDate,
-            bulletItems,
-            isMulti: false
-          })
-        },
-        {
-          id: "geo_int_comp",
-          label: "브랜드 정보 카드",
-          type: "company",
-          enabled: true,
-          companyName: company,
-          authorityUrl: urls[0] || "",
-          items: companyItems
-        }
-      ];
-
-    } else if (currentGeoFormat === "compare") {
-      // 3. 비교 / 차별화 대조 (기존 솔루션 vs 신제품)
-      geoTitles = [
-        `‘${product}’ vs 기존 솔루션… 무엇이 달라졌나 [완벽 비교]`,
-        `${company} ‘${product}’, 기존 제품과 무엇이 다를까?`,
-        `${company} ‘${product}’, 성능·가성비·편의성 3대 지표 대조 분석`,
-        `‘${product}’ vs 기존 솔루션, 나에게 맞는 선택은?`,
-        `세대교체 신호탄 쏜 ‘${product}’… 타사 대비 핵심 차별점 총정리`,
-        `합리적 선택을 위한 ${company} ‘${product}’ 비교 분석 리포트`
-      ];
-      geoSubtitle = `기존 방식의 한계 극복... ${killerStat || '성능 및 편의성'} 대폭 향상\n실사용자 관점에서 짚어본 핵심 차별화 포인트 3선`;
-
-      const compareRows = [
-        ["핵심 성능 및 스펙", "기존 모델의 한계 및 처리 지연", `${product}: ${killerStat || '최고 수준 성능 달성'}`],
-        ["사용 편의성", "복잡한 세팅 및 별도 교육 필요", `${bulletItems[0] || '원클릭 간편 직관 인터페이스'}`],
-        ["비용 및 유지보수", "높은 초기 도입비와 추가 비용 발생", `${bulletItems[1] || '유지비 40% 이상 절감 효과'}`],
-        ["고객 전담 지원", "제한적 응대 및 느린 피드백", `${company} 전담 서포트 및 정기 업데이트`]
-      ];
-
-      geoBlocks = [
-        {
-          id: "geo_cmp_sum",
-          label: "3줄 비교 요약",
-          type: "summary",
-          enabled: true,
-          points: [
-            `성능 혁신: 기존 대비 ${killerStat || '획기적인 성능 향상'}을 이루어 작업 효율을 대폭 극대화`,
-            `편의성 개선: 번거로운 과정 없이 직관적인 사용자 경험 제공`,
-            `경제성 검증: 도입 비용 및 유지 비용을 절감하여 높은 가성비 실현`
-          ]
-        },
-        {
-          id: "geo_cmp_bluf",
-          label: "GEO 핵심 인용 요약 (BLUF)",
-          type: "bluf",
-          enabled: true,
-          content: `‘${product}’는 기존 방식 대비 ${killerStat || '획기적인 성능 향상 및 비용 절감'}을 달성한 ${company}의 차세대 솔루션으로, ${bulletItems[0] || '사용자 편의성과 경제성'} 측면에서 뚜렷한 비교 우위를 제공하는 것이 핵심이다.`
-        },
-        {
-          id: "geo_cmp_p1",
-          label: "비교 배경 및 혁신성",
-          type: "text",
-          title: `기존 시장의 페인포인트와 ‘${product}’의 해결책은?`,
-          enabled: true,
-          content: `${leadParagraph}\n\n${bodyParagraph1}`
-        },
-        {
-          id: "geo_cmp_tbl",
-          label: "비교 대조 분석표 (3열)",
-          type: "table",
-          enabled: true,
-          title: `[ ‘${product}’ vs 기존 솔루션 핵심 스펙 대조표 ]`,
-          headers: ["비교 항목", "기존 방식 / 타사 솔루션", "‘" + product + "’의 혁신"],
-          rows: compareRows
-        },
-        {
-          id: "geo_cmp_guide",
-          label: "타깃 선택 가이드 (체크리스트)",
-          type: "checklist",
-          enabled: true,
-          title: `어떤 사용자에게 ‘${product}’가 가장 유리할까?`,
-          items: [
-            `기존 솔루션의 비싼 유지비와 느린 속도에 답답함을 느끼셨던 분`,
-            `복잡한 학습 곡선 없이 즉각적인 업무 성과를 내고 싶은 실무자`,
-            `${killerStat || '검증된 성능'}을 바탕으로 안정적인 서비스를 원하는 기업 고객`
-          ]
-        },
-        {
-          id: "geo_cmp_faq",
-          label: "AI 인용 최적화 FAQ (10선)",
-          type: "faq",
-          enabled: true,
-          faqs: generateFanOutFaqs({
-            company,
-            product,
-            killerStat,
-            keyPoint,
-            urls,
-            eventDate,
-            bulletItems,
-            isMulti: false
-          })
-        },
-        {
-          id: "geo_cmp_comp",
-          label: "브랜드 정보 카드",
-          type: "company",
-          enabled: true,
-          companyName: company,
-          authorityUrl: urls[0] || "",
-          items: companyItems
-        }
-      ];
-
-    } else if (currentGeoFormat === "recommend") {
-      // 4. 추천 / 큐레이션
-      geoTitles = [
-        `“이런 분들께 딱!”… ${company} ‘${product}’ 맞춤 추천 가이드`,
-        `${company} ‘${product}’, 어떤 사람에게 잘 맞을까?`,
-        `2026 베스트 픽: ${company} ‘${product}’ 구매 전 필독 체크리스트`,
-        `‘${product}’ 선택 전 꼭 확인할 점은? ${company} 추천 가이드`,
-        `나에게 꼭 맞을까? ${company} ‘${product}’ 유형별 추천 3선`,
-        `후회 없는 선택을 위한 ${company} ‘${product}’ 큐레이션`
-      ];
-      geoSubtitle = `소비자 유형별 최적화된 활용법과 체감 혜택 집중 조명\n합리적 가격과 뛰어난 완성도로 Z세대부터 실무자까지 만족도 UP`;
-
-      const recommendRows = [
-        ["실속파 / 입문자", "기본 스타터 패키지", `${killerStat || '가성비 혜택'} 및 손쉬운 접근성`],
-        ["전문가 / 파워유저", "고성능 풀옵션 구성", `${bulletItems[0] || '최대 작업 처리량 및 고도화된 기능'}`],
-        ["기업 / 단체 고객", "엔터프라이즈 맞춤형 플랜", `${bulletItems[1] || '전담 기술 지원 및 대량 도입 할인'}`]
-      ];
-
-      geoBlocks = [
-        {
-          id: "geo_rec_sum",
-          label: "맞춤 추천 요약",
-          type: "summary",
-          enabled: true,
-          points: [
-            `맞춤 큐레이션: 사용자 환경에 최적화된 3대 맞춤 라인업 제시`,
-            `체감 혜택: ${killerStat || '확실한 성능 향상'}을 통한 일상의 업그레이드`,
-            `선택 팁: 예산과 사용 목적에 맞춰 최적의 옵션을 선택 가능`
-          ]
-        },
-        {
-          id: "geo_rec_bluf",
-          label: "GEO 핵심 인용 요약 (BLUF)",
-          type: "bluf",
-          enabled: true,
-          content: `${company} ‘${product}’는 ${killerStat ? killerStat + '의 혜택을 집약한 ' : ''}사용자 맞춤형 솔루션으로, ${keyPoint || '용도와 예산에 맞춘 최적화 라인업'}을 통해 높은 실용성과 만족도를 제공하는 것이 핵심이다.`
-        },
-        {
-          id: "geo_rec_p1",
-          label: "추천 배경 및 특장점",
-          type: "text",
-          title: `독자 라이프스타일에 맞춘 3가지 핵심 추천 포인트는?`,
-          enabled: true,
-          content: `${leadParagraph}\n\n${bodyParagraph1}`
-        },
-        {
-          id: "geo_rec_chk",
-          label: "필독 체크리스트",
-          type: "checklist",
-          enabled: true,
-          title: `‘${product}’ 선택 전 반드시 확인해야 할 3가지`,
-          items: [
-            `본인의 사용 패턴에 맞는 핵심 혜택(${killerStat || '핵심 기능'})이 포함되어 있는가?`,
-            `공식 채널(${urls[0] || '홈페이지'})을 통한 프로모션 혜택을 챙겼는가?`,
-            `향후 지속적인 사후 관리와 기술 지원을 보장받을 수 있는가?`
-          ]
-        },
-        {
-          id: "geo_rec_tbl",
-          label: "유형별 맞춤 가이드 표",
-          type: "table",
-          enabled: true,
-          title: `[ 독자 유형별 ‘${product}’ 최적 추천표 ]`,
-          headers: ["추천 사용자 유형", "최적 추천 옵션", "주요 체감 혜택"],
-          rows: recommendRows
-        },
-        {
-          id: "geo_rec_faq",
-          label: "AI 인용 최적화 FAQ (10선)",
-          type: "faq",
-          enabled: true,
-          faqs: generateFanOutFaqs({
-            company,
-            product,
-            killerStat,
-            keyPoint,
-            urls,
-            eventDate,
-            bulletItems,
-            isMulti: false
-          })
-        },
-        {
-          id: "geo_rec_comp",
-          label: "브랜드 정보 카드",
-          type: "company",
-          enabled: true,
-          companyName: company,
-          authorityUrl: urls[0] || "",
-          items: companyItems
-        }
-      ];
-
-    } else {
-      // 5. 스토리텔링 / 기업뉴스 / 행사 (삼양식품 태국 레퍼런스 스타일)
-      geoTitles = [
-        `${company}, ${eventLocation}서 ‘${product}’ 글로벌 열풍 잇는다`,
-        `왜 ${eventLocation}인가? ${company} ‘${product}’ 현장 스토리`,
-        `[현장 스토리] “${quoteQuote.slice(0, 20)}…” ${company}, ‘${product}’로 무대 장악`,
-        `${company} ‘${product}’, ${eventLocation} 현장에서 무엇을 보여줬나?`,
-        `${company} ‘${product}’, ${eventLocation} 달군 뜨거운 열기`,
-        `세계가 주목한 K-혁신… ${company}, ‘${product}’로 해외 거점 공략`
-      ];
-      geoSubtitle = `${eventLocation}서 대규모 홍보관 및 체험존 전격 운영\n현지 바이어 및 고객 반응 폭발... 글로벌 시장 확대 교두보 마련`;
-
-      geoBlocks = [
-        {
-          id: "geo_sty_sum",
-          label: "3줄 핵심 요약",
-          type: "summary",
-          enabled: true,
-          points: [
-            `${company}가 ${eventLocation}에서 ‘${product}’를 전격 선보이고 대규모 현장 부스를 성황리에 운영했습니다.`,
-            killerStat ? `${killerStat}의 경쟁력을 앞세워 현지 바이어와 참관객들의 뜨거운 관심과 호평을 이끌어냈습니다.` : (bulletItems[0] || `차별화된 제품 경쟁력과 맞춤형 홍보관 운영으로 현지에서 높은 주목을 받았습니다.`),
-            bulletItems[1] || `이번 행사를 교두보 삼아 글로벌 거점 확대와 전략적 파트너십 구축에 박차를 가할 계획입니다.`
-          ]
-        },
-        {
-          id: "geo_sty_bluf",
-          label: "GEO 핵심 인용 요약 (BLUF)",
-          type: "bluf",
-          enabled: true,
-          content: `${company}는 ${eventLocation}에서 열린 행사에서 ‘${product}’${killerStat ? `(${killerStat})` : ''}를 전격 선보이고, 현지 바이어 및 글로벌 고객을 대상으로 전략적 시장 공략에 본격 돌입했다.`
-        },
-        {
-          id: "geo_sty_5w1h",
-          label: "5W1H (육하원칙) 요약 블록",
-          type: "5w1h",
-          enabled: true,
-          title: `한눈에 보는 핵심 개요 (5W1H)`,
-          data: {
-            who: `${company} (${personTitle ? personTitle + (personName ? ' ' + personName : '') : '글로벌 사업본부'})`,
-            when: eventDate,
-            where: eventLocation,
-            what: `‘${product}’ ${killerStat ? killerStat + ' ' : ''}공개 및 현장 부스 운영`,
-            how: "체험존 운영, 1:1 비즈니스 상담 및 글로벌 프로모션 진행",
-            why: "글로벌 인지도 강화 및 신시장 수출 교두보 확보"
-          }
-        },
-        {
-          id: "geo_sty_p1",
-          label: "현장 분위기 및 부스 열기",
-          type: "text",
-          title: `‘${product}’ 부스 인산인해… 현장 바이어 상담 잇달아`,
-          enabled: true,
-          content: `${leadParagraph}\n\n${bodyParagraph1}`
-        },
-        {
-          id: "geo_sty_p2",
-          label: "현지 반응 및 차별화 전략",
-          type: "text",
-          title: `현지 맞춤형 전략과 차별화된 제품 경쟁력의 결실`,
-          enabled: true,
-          content: `${bodyParagraph2}\n\n현장을 찾은 바이어들은 “${product} 특유의 독창성과 높은 완성도에 깊은 인상을 받았다”며 긍정적인 평가를 쏟아냈다.`
-        },
-        {
-          id: "geo_sty_p3",
-          label: "글로벌 비전 및 코멘트",
-          type: "text",
-          title: `글로벌 시장 수출 전진기지 구축 및 향후 로드맵`,
-          enabled: true,
-          content: `${company} ${personTitle}는 “${quoteQuote}”라며 “${quoteQuote2}”고 강조했다.`
-        },
-        {
-          id: "geo_sty_faq",
-          label: "AI 인용 최적화 FAQ (10선)",
-          type: "faq",
-          enabled: true,
-          faqs: generateFanOutFaqs({
-            company,
-            product,
-            killerStat,
-            keyPoint,
-            urls,
-            eventDate,
-            bulletItems,
-            isMulti: false
-          })
-        },
-        {
-          id: "geo_sty_comp",
-          label: "브랜드 정보 카드",
-          type: "company",
-          enabled: true,
-          companyName: company,
-          authorityUrl: urls[0] || "",
-          items: companyItems
-        }
-      ];
+      });
+    } else if (fmt === "recommend") {
+      const items = [`핵심 내용: ${core}`];
+      if (numbers.length) items.push(`규모·수치: ${numbers.slice(0, 3).join(", ")}`);
+      if (dates.length) items.push(`일정: ${dates.slice(0, 3).join(", ")}`);
+      if (location) items.push(`장소: ${location}`);
+      if (urls[0]) items.push(`공식 안내: ${urls[0]}`);
+      extraBlocks.push({ id: "geo_check", label: "확인 포인트 체크리스트", type: "checklist", enabled: true, title: "한눈에 확인할 포인트", items });
     }
+
+    let tableBlock = null;
+    if (fmt === "compare" && numbers.length) {
+      tableBlock = {
+        id: "geo_tbl",
+        label: "수치 비교표",
+        type: "table",
+        enabled: true,
+        title: "[ 수치로 보는 핵심 내용 ]",
+        headers: ["수치", "관련 내용 (원문)"],
+        rows: numbers.slice(0, 6).map(n => [n, shorten(sentences.find(s => s.includes(n)) || "", 70)])
+      };
+    } else if (fmt !== "recommend") {
+      tableBlock = {
+        id: "geo_tbl",
+        label: "핵심 정보 요약표",
+        type: "table",
+        enabled: true,
+        title: "[ 핵심 정보 요약표 ]",
+        headers: ["구분", "내용"],
+        rows: factRows
+      };
+    }
+
+    const geoBlocks = [
+      { id: "geo_sum", label: "3줄 핵심 요약", type: "summary", enabled: true, points: summaryPoints },
+      { id: "geo_bluf", label: "GEO 핵심 인용 요약 (BLUF)", type: "bluf", enabled: true, content: lead },
+      ...extraBlocks,
+      ...sectionBlocks("geo", "geo"),
+      ...(tableBlock ? [tableBlock] : []),
+      faqBlock,
+      companyBlock
+    ];
 
     const geoFormatLabels = {
       info: "정보성",
@@ -1006,13 +619,13 @@ document.addEventListener("DOMContentLoaded", () => {
         badgeText: "기사식 광고",
         reporter: "OOO기자",
         date: dateStr,
-        subtitle: adSubtitle,
+        subtitle: subtitle,
         titleCandidates: adTitles,
         selectedTitleIndex: 0,
         customTitle: "",
         leadImage: {
-          caption: `${company} ‘${product}’ 관련 대표 보도사진. <사진제공=${company}>`,
-          desc: `${company} ‘${product}’ 공식 이미지`
+          caption: `${company} 관련 보도사진. <사진제공=${company}>`,
+          desc: `${company} 공식 이미지`
         },
         blocks: adBlocks
       },
@@ -1022,13 +635,13 @@ document.addEventListener("DOMContentLoaded", () => {
         badgeText: `GEO 기사 · ${currentFormatName}`,
         reporter: "OOO기자",
         date: dateStr,
-        subtitle: geoSubtitle,
+        subtitle: subtitle,
         titleCandidates: geoTitles,
         selectedTitleIndex: 0,
         customTitle: "",
         leadImage: {
           caption: `< 출처 : ${company} >`,
-          desc: `${company} ‘${product}’ MK Pick 대표 비주얼`
+          desc: `${company} 대표 이미지`
         },
         blocks: geoBlocks
       }
@@ -1085,7 +698,7 @@ document.addEventListener("DOMContentLoaded", () => {
           } else {
             const firstWord = firstLine.split(/\s+/)[0] || "";
             brand = firstWord.replace(/[\[\]"']/g, "") || `기업 ${idx + 1}`;
-            campaign = firstLine.replace(brand, "").trim() || `${brand} 프로모션`;
+            campaign = firstLine.replace(brand, "").trim();
           }
         }
       }
@@ -1094,14 +707,12 @@ document.addEventListener("DOMContentLoaded", () => {
       const benefitMatch = bText.match(/([^\n]*(?:할인|증정|지원|무료|1\+1|특가|기부|캐시백|적립|패키지|키트|선물|공모|이벤트)[^\n]*)/);
       if (benefitMatch) {
         benefit = benefitMatch[1].replace(/^[-•✓▲\s*]+/, "").slice(0, 50).trim();
-      } else {
-        benefit = campaign ? `${campaign} 혜택 및 프로모션` : "주요 고객 혜택 제공";
       }
 
       brands.push({
         id: Date.now() + Math.random(),
         brand: brand.slice(0, 15),
-        campaign: campaign || `${brand} 신규 캠페인`,
+        campaign: campaign,
         benefit: benefit,
         content: bText
       });
@@ -1190,104 +801,81 @@ document.addEventListener("DOMContentLoaded", () => {
     const brandsStr = brandNames.slice(0, 3).join("·") + (brandNames.length > 3 ? " 등" : "");
     const dateStr = new Date().toISOString().slice(0, 10).replace(/-/g, ".") + " 09:00";
 
-    // 1. 헤드라인 후보 6가지 (질문형 2개 포함)
-    const titles = [
-      `“열 달의 기다림을 응원합니다”…${theme} 유래와 기업들의 따뜻한 동행`,
-      `${theme}, 어떤 기업이 어떤 혜택을 준비했을까?`,
-      `기부 연계부터 최대 63% 할인까지… ${brandsStr} 알짜 지원 혜택 총정리`,
-      `${brandsStr} ${theme} 혜택, 무엇이 다르고 어떻게 받을까?`,
-      `[기획 큐레이션] ${theme} 맞아 쏟아지는 ${brandsCount}개 기업 맞춤 혜택`,
-      `착한 소비와 파격 혜택의 만남… ${brandsStr}, ${theme} 특별 프로모션`
-    ];
+    // 1. 헤드라인 후보 (질문형 포함) — 기업명·주제 등 입력값만 사용
+    const titles = uniq([
+      `${theme}… ${brandsStr} ${brandsCount}개 기업 주요 내용 정리`,
+      `${theme}, 어떤 기업이 무엇을 준비했을까?`,
+      `[한눈에 비교] ${brandsStr} ${theme}`,
+      `${brandsStr}, ${theme} 무엇이 다를까?`
+    ]);
 
-    const subtitle = `기부 연계 캠페인부터 육아·생활용품 할인까지 실속 혜택 집중 조명\n${brandNames.join('·')} 등 각 기업들이 전하는 따뜻한 응원과 지원 정보 한눈에`;
+    const subtitle = `${brandNames.join('·')} 등 ${brandsCount}개 기업 내용 정리\n브랜드별 주요 내용과 비교표 수록`;
+
+    // 각 브랜드 원문의 첫 문장 (요약·BLUF용)
+    const firstSentenceOf = (b) => splitSentences((b.content || "").split("\n"))[0] || "";
 
     // 2. 블록 구성
     const blocks = [];
 
-    // (0) 3줄 핵심 요약
+    // (0) 3줄 핵심 요약 — 브랜드별 원문 첫 문장
     blocks.push({
       id: "mb_summary",
-      label: "AI 팩트체크 요약",
+      label: "3줄 핵심 요약",
       type: "summary",
       enabled: true,
-      points: [
-        `${theme}을 기념하여 출산과 나눔, 고객 감사의 가치를 되새기는 뜻깊은 자리가 마련되고 있습니다.`,
-        `이번 행사를 맞아 ${brandNames.join(', ')} 등 다양한 기업들이 실질적인 지원과 파격적인 혜택을 제공하는 캠페인을 전개하고 있습니다.`,
-        `단순한 가격 할인을 넘어 취약계층 기부와 고객 참여형 이벤트가 함께 진행되어 사회적 온기를 더하고 있습니다.`
-      ]
+      points: multiBrandList.slice(0, 3).map(b => firstSentenceOf(b)).filter(Boolean)
     });
 
-    // (1) GEO 핵심 인용 요약 (BLUF)
+    // (1) GEO 핵심 인용 요약 (BLUF) — 참여 기업 사실만
     blocks.push({
       id: "mb_bluf",
       label: "GEO 핵심 인용 요약 (BLUF)",
       type: "bluf",
       enabled: true,
-      content: `${theme}을 맞아 ${brandsStr} 등 주요 기업들이 ${multiBrandList[0] ? multiBrandList[0].benefit : '다채로운 특별 지원과 할인 혜택'}을 중심으로 소비자 맞춤형 캠페인과 사회공헌 활동을 전격 전개한다.`
+      content: `${josa(theme, "과", "와")} 관련해 ${brandNames.join(", ")} 등 ${brandsCount}개 기업의 주요 내용을 브랜드별로 정리했다.`
     });
 
-    // (2) 공통 오프닝 도입 문단
-    blocks.push({
-      id: "mb_intro",
-      label: "공통 오프닝 (배경 및 취지)",
-      type: "text",
-      title: "",
-      enabled: true,
-      content: `풍요와 결실의 계절, 그리고 새로운 생명과 일상의 행복을 응원하는 마음이 모이는 ${theme}.\n\n겉으로 드러나지 않는 곳에서 묵묵히 헌신하는 이들을 응원하고 사회 전체가 따뜻한 온기를 나누자는 취지에 발맞춰, 주요 기업들이 앞다퉈 알짜 지원 혜택과 뜻깊은 프로모션을 선보이고 있다.\n\n놓치면 아쉬운 대표 기업들의 핵심 지원 내용과 이벤트 참여 방법을 정리해 전한다.`
-    });
-
-    // (3) 각 브랜드별 릴레이 문단
+    // (2) 각 브랜드별 문단 — 원문 그대로
     multiBrandList.forEach((b, idx) => {
       blocks.push({
         id: `mb_brand_${idx}`,
         label: `브랜드 #${idx + 1}: ${b.brand}`,
         type: "text",
-        title: `${b.brand}, ${b.campaign}`,
+        title: b.campaign ? `${b.brand}, ${b.campaign}` : b.brand,
         enabled: true,
-        content: `${b.content}\n\n• 주요 혜택 및 행사: ${b.benefit}`
+        content: b.content
       });
     });
 
-    // (4) [한눈에 비교하는 브랜드 혜택] 요약 비교표 (테이블)
-    const tableHeaders = ["브랜드", "캠페인 / 행사 형태", "주요 혜택 및 내용"];
+    // (3) 브랜드 비교표
+    const tableHeaders = ["브랜드", "캠페인 / 행사", "주요 내용 (원문)"];
     const tableRows = multiBrandList.map(b => [
       b.brand,
-      b.campaign.replace(/‘|’|“|”/g, "").slice(0, 18),
-      b.benefit
+      (b.campaign || "-").replace(/‘|’|“|”/g, "").slice(0, 18),
+      b.benefit || shorten(firstSentenceOf(b), 50) || "-"
     ]);
 
     blocks.push({
       id: "mb_table",
-      label: "한눈에 비교하는 브랜드 혜택표",
+      label: "한눈에 비교하는 브랜드 표",
       type: "table",
       enabled: true,
-      title: `[ 한눈에 비교하는 ${theme} 브랜드 혜택 총정리 ]`,
+      title: `[ 한눈에 비교하는 ${theme} ]`,
       headers: tableHeaders,
       rows: tableRows
     });
 
-    // (5) 자주 묻는 질문 (FAQ) 10선 (팬아웃 쿼리 수렴 알고리즘 적용)
+    // (4) 자주 묻는 질문 (FAQ) — 원문에서 답을 찾은 질문만
     blocks.push({
       id: "mb_faq",
-      label: "AI 인용 최적화 FAQ (10선)",
+      label: "AI 인용 최적화 FAQ",
       type: "faq",
       enabled: true,
       faqs: generateFanOutFaqs({
         theme,
-        brandNames,
+        brandList: multiBrandList,
         isMulti: true
       })
-    });
-
-    // (6) 마무리 총평 및 한 줄 요약
-    blocks.push({
-      id: "mb_closing",
-      label: "마무리 총평 & 한 줄 요약",
-      type: "text",
-      title: "",
-      enabled: true,
-      content: `단순한 가격 할인을 넘어 사회 구성원 모두가 따뜻하게 동행하는 이번 ${theme}.\n각 기업들이 정성껏 마련한 다채로운 지원과 혜택이 실질적인 보탬과 큰 응원이 되기를 기대한다.\n\n한 줄 요약! ${theme} 맞춤 프로모션은 풍성한 할인 혜택과 더불어 취약계층을 향한 나눔의 가치까지 함께 누릴 수 있는 뜻깊은 기회다.`
     });
 
     return {
@@ -1470,20 +1058,18 @@ document.addEventListener("DOMContentLoaded", () => {
           },
           {
             id: "def_geo_faq",
-            label: "AI 인용 최적화 FAQ (10선)",
+            label: "AI 인용 최적화 FAQ",
             type: "faq",
             enabled: true,
             faqs: generateFanOutFaqs({
               company: "신한카드",
-              product: "컬리 신한카드",
-              killerStat: "최대 14% 적립",
-              keyPoint: "첫 결제 1만5천원 캐시백 및 일상 5% 추가 적립",
+              sentences: splitSentences([
+                "신한카드가 장보기 앱 컬리와 협력하여 컬리 쇼핑에 최적화된 PLCC ‘컬리 신한카드’를 전격 출시했다. 컬리멤버십 고객이 해당 카드로 결제할 경우 기본 멤버십 적립 7%에 카드 결제 혜택 최대 7%가 더해져 최대 14%의 파격적인 컬리적립금을 제공받을 수 있다.",
+                "컬리뿐만 아니라 배달앱, 커피전문점, 편의점 등 일상 생활 밀착 가맹점에서도 최대 5% 적립을 지원한다. 또한 카드 출시를 기념해 10월 31일까지 컬리에서 첫 결제 시 전월 이용 실적과 무관하게 1만5,000원의 캐시백 혜택을 전격 제공한다."
+              ]),
+              quotes: [],
               urls: ["https://www.mk.co.kr/news/pick/12170377"],
-              eventDate: "10월 31일",
-              bulletItems: [
-                "컬리멤버십 결제 시 최대 14% 컬리적립금",
-                "배달앱·커피·편의점 등 생활밀착 가맹점 최대 5% 적립"
-              ],
+              location: "",
               isMulti: false
             })
           },
@@ -1580,6 +1166,7 @@ document.addEventListener("DOMContentLoaded", () => {
     });
     const totalChars = text.length;
     const noSpaceChars = text.replace(/\s+/g, "").length;
+    const readMinutes = Math.max(1, Math.round(totalChars / 500));
     charCountBadge.textContent = `본문 ${totalChars.toLocaleString()}자 · 읽기 약 ${readMinutes}분`;
     charCountBadge.title = `총 ${totalChars.toLocaleString()}자 (공백 제외 ${noSpaceChars.toLocaleString()}자) · 분당 500자 기준 읽기 약 ${readMinutes}분`;
   }
@@ -1675,7 +1262,7 @@ document.addEventListener("DOMContentLoaded", () => {
   function applyFactHighlight(text) {
     if (!text || typeof text !== "string") return text;
     // 숫자, %, 금액, 날짜, 인원수, 단위 등 핵심 수치 팩트 정규식
-    const factRegex = /(\d+(?:\.\d+)?%|\d+(?:,\d{3})*(?:만\s*원|천\s*원|원|여?\s*명|명|개사|개|곳|배|주년|\s*TOPS)|\b\d{1,2}월\s*\d{1,2}일(?:\s*~\s*\d{1,2}월?\s*\d{1,2}일)?|\b\d{4}년(?:\s*\d{1,2}월)?)/g;
+    const factRegex = /(\d+(?:\.\d+)?%|\d+(?:,\d{3})*(?:\.\d+)?(?:조\s*\d+(?:,\d{3})*억\s*원|조\s*원|억\s*원|만\s*원|천\s*원|원|달러|여?\s*명|명|개사|개국|개|곳|배|척|건|톤|가구|주년|\s*TOPS)|\b\d{1,2}월\s*\d{1,2}일(?:\s*~\s*\d{1,2}월?\s*\d{1,2}일)?|\b\d{4}년(?:\s*\d{1,2}월)?)/g;
     return text.replace(factRegex, '<mark class="fact-highlight" title="팩트 확인: 원문 수치">$1</mark>');
   }
 
@@ -1830,7 +1417,7 @@ document.addEventListener("DOMContentLoaded", () => {
               <span class="faq-toggle-icon">▼</span>
               <span class="faq-toggle-txt">추천 독자 질문 ${rest.length}개 더보기 (총 ${allFaqs.length}개 팬아웃 Q&A)</span>
             </button>
-            <span class="faq-fanout-badge">AI 검색 인용 확률 높은 핵심 질의 10선</span>
+            <span class="faq-fanout-badge">답변은 원문 문장 그대로 (최대 10개)</span>
           </div>
           <div class="faq-extended-container hidden" id="faqExtended_${block.id}">
             ${rest.map((f, i) => renderFaqRow(f, i + 3)).join("")}
@@ -1841,8 +1428,8 @@ document.addEventListener("DOMContentLoaded", () => {
       contentView.innerHTML = `
         <div class="faq-block-wrapper">
           <div class="faq-header-toolbar">
-            <div class="article-section-subhead" style="margin-bottom:0;">자주 묻는 질문 (FAQ 10선)</div>
-            <span style="font-size:12px; color:#757575;">※ 팬아웃 쿼리를 수렴한 맞춤 대표 질문</span>
+            <div class="article-section-subhead" style="margin-bottom:0;">자주 묻는 질문 (FAQ ${allFaqs.length}개)</div>
+            <span style="font-size:12px; color:#757575;">※ 원문에서 답을 찾은 질문만 표시</span>
           </div>
           <div class="faq-main-list">
             ${top3.map((f, i) => renderFaqRow(f, i)).join("")}
@@ -2168,8 +1755,31 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   // 6. 보도자료 텍스트 입력 시 실시간/자동 반영 (디바운스 처리)
+  // 예시 버튼으로 채운 자료를 지우고 새 자료를 넣으면, 예시의 기업명·메모·링크·브랜드 카드도 함께 비운다
+  let exampleText = "";
+  document.querySelectorAll(".sample-btn").forEach(btn => {
+    btn.addEventListener("click", () => setTimeout(() => { exampleText = pressReleaseText.value; }, 0));
+  });
+  function clearExampleLeftovers() {
+    if (!exampleText || pressReleaseText.value.includes(exampleText.slice(0, 30))) return;
+    exampleText = "";
+    brandNameInput.value = "";
+    keyPointInput.value = "";
+    document.querySelectorAll(".url-input").forEach((input, idx) => {
+      if (idx === 0) input.value = "";
+      else input.closest(".url-input-item").remove();
+    });
+    if (multiBrandTheme) multiBrandTheme.value = "";
+    isMultiBrandMode = false;
+    multiBrandList = [];
+    if (multiBrandPanel) multiBrandPanel.classList.add("hidden");
+    if (brandCardsContainer) brandCardsContainer.innerHTML = "";
+    showToast("새 자료가 입력되어 예시의 기업명·메모·링크를 비웠습니다.");
+  }
+
   let inputDebounceTimer = null;
   pressReleaseText.addEventListener("input", () => {
+    clearExampleLeftovers();
     if (inputDebounceTimer) clearTimeout(inputDebounceTimer);
     inputDebounceTimer = setTimeout(() => {
       if (pressReleaseText.value.trim().length > 20) {

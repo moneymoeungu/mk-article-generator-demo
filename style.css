@@ -1538,14 +1538,13 @@ body.resizing * {
   flex-shrink: 0;
 }
 
-/* 본문 속 핵심 수치/팩트 하이라이트 (연회색 배경 + 굵은 글씨: 경고용 노랑과 구분) */
+/* 본문 속 핵심 수치/팩트 하이라이트 (연한 노랑 형광펜) */
 mark.fact-highlight {
-  background-color: #F7F7F7;
+  background-color: #FFF4CC;
   color: #111111;
   font-weight: 700;
   padding: 1px 4px;
   border-radius: 3px;
-  border-bottom: 0.5px solid #757575;
   transition: all 0.15s ease;
 }
 
