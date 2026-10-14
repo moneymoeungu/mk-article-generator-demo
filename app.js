@@ -261,6 +261,45 @@ document.addEventListener("DOMContentLoaded", () => {
     return s.trim();
   }
 
+  // ==========================================================================
+  // 문체 다듬기 (규칙 기반, 내용 추가 없음)
+  // - 문장 끝 '~합니다/~습니다/~입니다'를 기사체 '~한다/~다/~이다'로 바꾼다
+  // - 따옴표로 끝나는 인용 문장은 건드리지 않는다
+  // ==========================================================================
+  const JONG_B = 17, JONG_N = 4, JONG_SS = 20;
+  const ADJ_B_WORDS = ["큽", "다릅", "바쁩", "아픕", "예쁩", "기쁩", "슬픕", "비쌉", "짭", "고픕", "나쁩", "빠릅", "느립", "아닙"];
+  const ADJ_SEUP_STEMS = "없같좋많싫낫넓높낮깊작적짧늦굵옳맑밝젊찮";
+  const jong = (ch) => (ch.charCodeAt(0) - 0xAC00) % 28;
+  const setJong = (ch, j) => String.fromCharCode(ch.charCodeAt(0) - jong(ch) + j);
+
+  function toPlainEnding(sentence) {
+    const m = sentence.match(/^([\s\S]*?)([가-힣])(습니다|니다)([.!]?)$/);
+    if (!m) return sentence;
+    const [, head, ch, ending, punct] = m;
+    const prev = head.slice(-1);
+    let tail;
+    if (ending === "습니다") {
+      tail = (jong(ch) === JONG_SS || ADJ_SEUP_STEMS.includes(ch)) ? `${ch}다` : `${ch}는다`;
+    } else if (jong(ch) === JONG_B) {
+      if (ch === "입") tail = "이다";
+      else if (ADJ_B_WORDS.includes(ch) || ADJ_B_WORDS.includes(prev + ch)) tail = `${setJong(ch, 0)}다`;
+      else tail = `${setJong(ch, JONG_N)}다`;
+    } else {
+      return sentence;
+    }
+    return `${head}${tail}${punct || "."}`;
+  }
+
+  // 문단 단위 다듬기 (문장마다 끝맺음만 변환)
+  function polishParagraph(p) {
+    return (p || "").split(/(?<=[.!?])\s+/).map(s => toPlainEnding(s.trim())).join(" ");
+  }
+
+  // 요약·BLUF용 직답형: "~했다고 31일 밝혔다." → "~했다."
+  function toDirectStatement(s) {
+    return (s || "").replace(/고\s*(?:\d{1,2}일\s*)?(?:밝혔다|전했다|발표했다)\.$/, ".");
+  }
+
   function detectCompany(brandName, lines, rawText) {
     if (brandName) return brandName;
     for (const line of lines.slice(0, 4)) {
@@ -309,7 +348,7 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isMulti) {
       const list = [];
       const names = (brandList || []).map(b => b.brand).filter(Boolean);
-      if (names.length) list.push({ q: `${theme}에는 어떤 기업이 참여하나요?`, a: `${names.join(", ")} 등 ${names.length}개 기업입니다.` });
+      if (names.length) list.push({ q: `${theme}에는 어떤 기업이 참여하나요?`, a: `${names.join(", ")} 등 ${names.length}개 기업이다.` });
       (brandList || []).forEach(b => {
         const sents = splitSentences((b.content || "").split("\n"));
         if (sents[0]) list.push({ q: `${josa(b.brand, "은", "는")} 무엇을 준비했나요?`, a: sents[0] });
@@ -361,7 +400,7 @@ document.addEventListener("DOMContentLoaded", () => {
       const a = pick(sp.keys);
       if (a) list.push({ q: typeof sp.q === "function" ? sp.q(a) : sp.q, a });
     });
-    if (urls && urls[0]) list.push({ q: `더 자세한 내용은 어디서 확인할 수 있나요?`, a: `${company} 공식 웹사이트(${urls[0]})에서 확인할 수 있습니다.` });
+    if (urls && urls[0]) list.push({ q: `더 자세한 내용은 어디서 확인할 수 있나요?`, a: `${company} 공식 웹사이트(${urls[0]})에서 확인할 수 있다.` });
     return toFaq(list);
   }
 
@@ -398,6 +437,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     let bodyParas = lines.slice(bodyStart).filter(l => !/^\[.*\]$/.test(l));
     if (bodyParas.length === 0) bodyParas = headLines.splice(0);
+    bodyParas = bodyParas.map(polishParagraph); // 문장 끝맺음을 기사체로 (내용은 그대로)
 
     const bodyText = bodyParas.join("\n");
     const sentences = splitSentences(bodyParas);
@@ -474,6 +514,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const summaryPoints = uniq(bodyParas.map(p => splitSentences([p])[0] || "")).slice(0, 3);
     sentences.forEach(s => { if (summaryPoints.length < 3 && !summaryPoints.includes(s)) summaryPoints.push(s); });
+    for (let i = 0; i < summaryPoints.length; i++) summaryPoints[i] = toDirectStatement(summaryPoints[i]);
 
     const factRows = [["기업", company]];
     if (product) factRows.push(["대상", `‘${product}’`]);
@@ -596,7 +637,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     const geoBlocks = [
       { id: "geo_sum", label: "3줄 핵심 요약", type: "summary", enabled: true, points: summaryPoints },
-      { id: "geo_bluf", label: "GEO 핵심 인용 요약 (BLUF)", type: "bluf", enabled: true, content: lead },
+      { id: "geo_bluf", label: "GEO 핵심 인용 요약 (BLUF)", type: "bluf", enabled: true, content: toDirectStatement(lead) },
       ...extraBlocks,
       ...sectionBlocks("geo", "geo"),
       ...(tableBlock ? [tableBlock] : []),
@@ -825,6 +866,12 @@ document.addEventListener("DOMContentLoaded", () => {
     const subtitle = `${brandNames.join('·')} 등 ${brandsCount}개 기업 내용 정리\n브랜드별 주요 내용과 비교표 수록`;
 
     // 각 브랜드 원문의 첫 문장 (요약·BLUF용)
+    // 문체 다듬기를 적용한 브랜드 데이터 (카드 원본은 그대로 둠)
+    const brandsP = multiBrandList.map(b => ({
+      ...b,
+      content: (b.content || "").split("\n").map(polishParagraph).join("\n"),
+      benefit: b.benefit ? polishParagraph(b.benefit) : ""
+    }));
     const firstSentenceOf = (b) => splitSentences((b.content || "").split("\n"))[0] || "";
 
     // 2. 블록 구성
@@ -836,7 +883,7 @@ document.addEventListener("DOMContentLoaded", () => {
       label: "3줄 핵심 요약",
       type: "summary",
       enabled: true,
-      points: multiBrandList.slice(0, 3).map(b => firstSentenceOf(b)).filter(Boolean)
+      points: brandsP.slice(0, 3).map(b => firstSentenceOf(b)).filter(Boolean)
     });
 
     // (1) GEO 핵심 인용 요약 (BLUF) — 참여 기업 사실만
@@ -856,12 +903,12 @@ document.addEventListener("DOMContentLoaded", () => {
         type: "text",
         title: "",
         enabled: true,
-        content: multiBrandIntro
+        content: multiBrandIntro.split("\n").map(polishParagraph).join("\n")
       });
     }
 
     // (2) 각 브랜드별 문단 — 원문 그대로
-    multiBrandList.forEach((b, idx) => {
+    brandsP.forEach((b, idx) => {
       blocks.push({
         id: `mb_brand_${idx}`,
         label: `브랜드 #${idx + 1}: ${b.brand}`,
@@ -874,7 +921,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // (3) 브랜드 비교표
     const tableHeaders = ["브랜드", "캠페인 / 행사", "주요 내용 (원문)"];
-    const tableRows = multiBrandList.map(b => [
+    const tableRows = brandsP.map(b => [
       b.brand,
       (b.campaign || "-").replace(/‘|’|“|”/g, ""),
       b.benefit || firstSentenceOf(b) || "-"
@@ -898,7 +945,7 @@ document.addEventListener("DOMContentLoaded", () => {
       enabled: true,
       faqs: generateFanOutFaqs({
         theme,
-        brandList: multiBrandList,
+        brandList: brandsP,
         isMulti: true
       })
     });
