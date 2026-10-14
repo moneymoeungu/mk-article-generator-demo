@@ -7,6 +7,8 @@ document.addEventListener("DOMContentLoaded", () => {
   const mainTabs = document.querySelectorAll(".main-tab");
   const geoFormatContainer = document.getElementById("geoFormatContainer");
   const subTabs = document.querySelectorAll(".sub-tab");
+  const catBtns = document.querySelectorAll(".cat-btn");
+  const geoCategoryRecommendHint = document.getElementById("geoCategoryRecommendHint");
   const currentStyleBadge = document.getElementById("currentStyleBadge");
 
   // 버튼들
@@ -72,10 +74,40 @@ document.addEventListener("DOMContentLoaded", () => {
   // 현재 상태 관리
   let currentMainStyle = "ad"; // 'ad' (기사식 광고) | 'geo' (GEO 기사)
   let currentGeoFormat = "info"; // 'info' | 'interview' | 'compare' | 'recommend' | 'story'
+  let currentGeoCategory = "제품·기술"; // '산업Q&A' | '제품·기술' | '성공사례' | '기업뉴스' | '브랜드 스토리'
   let currentLayoutMode = localStorage.getItem("mk_layout_mode") || "horizontal"; // 'horizontal' (가로 분할) | 'vertical' (세로 롤백)
   let isMultiBrandMode = false; // 복수 브랜드 모음 모드 여부
   let multiBrandList = []; // [ { id, brand, campaign, benefit, content } ]
   let multiBrandIntro = ""; // 복수 브랜드 자료 맨 앞의 도입부 원문
+
+  // GEO 콘텐츠 유형별 추천 MK Pick 카테고리 매핑
+  function getRecommendedGeoCategory(format = currentGeoFormat, isMulti = isMultiBrandMode) {
+    if (isMulti) return "산업Q&A";
+    const recMap = {
+      info: "제품·기술",
+      interview: "브랜드 스토리",
+      compare: "산업Q&A",
+      recommend: "성공사례",
+      story: "기업뉴스"
+    };
+    return recMap[format] || "제품·기술";
+  }
+
+  // MK Pick 카테고리 선택 UI 및 추천 배지 동기화
+  function syncGeoCategoryUI() {
+    const recCat = getRecommendedGeoCategory(currentGeoFormat, isMultiBrandMode);
+    if (geoCategoryRecommendHint) {
+      geoCategoryRecommendHint.textContent = `현재 유형 추천: ${recCat}`;
+    }
+    catBtns.forEach(btn => {
+      const cat = btn.getAttribute("data-geo-cat");
+      btn.classList.toggle("active", cat === currentGeoCategory);
+      const badge = btn.querySelector(".cat-rec-badge");
+      if (badge) {
+        badge.classList.toggle("hidden", cat !== recCat);
+      }
+    });
+  }
 
   // 레이아웃 모드 적용 함수
   function applyLayoutMode(mode, notify = false) {
@@ -510,7 +542,7 @@ document.addEventListener("DOMContentLoaded", () => {
     // ==========================================================================
     // (B) GEO 기사: 3줄 요약 → BLUF → 유형별 구성 → 원문 섹션(질문형 소제목) → FAQ
     // ==========================================================================
-    const geoCategory = currentGeoFormat === "story" ? "기업뉴스" : (currentGeoFormat === "interview" ? "브랜드 스토리" : "제품·기술");
+    const geoCategory = currentGeoCategory || getRecommendedGeoCategory(currentGeoFormat, false);
 
     const summaryPoints = uniq(bodyParas.map(p => splitSentences([p])[0] || "")).slice(0, 3);
     sentences.forEach(s => { if (summaryPoints.length < 3 && !summaryPoints.includes(s)) summaryPoints.push(s); });
@@ -674,7 +706,7 @@ document.addEventListener("DOMContentLoaded", () => {
       geo: {
         viewerType: "mk-pick",
         activeCategory: geoCategory,
-        badgeText: `GEO 기사 · ${currentFormatName}`,
+        badgeText: `GEO 기사 · ${currentFormatName} · ${geoCategory}`,
         reporter: "OOO기자",
         date: dateStr,
         subtitle: subtitle,
@@ -950,10 +982,11 @@ document.addEventListener("DOMContentLoaded", () => {
       })
     });
 
+    const mbCat = currentGeoCategory || "산업Q&A";
     return {
       viewerType: "mk-pick",
-      activeCategory: "산업Q&A",
-      badgeText: `복수 브랜드 기사 (${brandsCount}개사)`,
+      activeCategory: mbCat,
+      badgeText: `복수 브랜드 기사 (${brandsCount}개사) · ${mbCat}`,
       reporter: "OOO기자",
       date: dateStr,
       subtitle: subtitle,
@@ -1057,10 +1090,11 @@ document.addEventListener("DOMContentLoaded", () => {
         ]
       };
     } else {
+      const defCat = currentGeoCategory || getRecommendedGeoCategory(currentGeoFormat, false);
       return {
         viewerType: "mk-pick",
-        activeCategory: "제품·기술",
-        badgeText: "GEO 기사 · 정보성",
+        activeCategory: defCat,
+        badgeText: `GEO 기사 · 정보성 · ${defCat}`,
         reporter: "OOO기자",
         date: "2026.10.13 10:00",
         subtitle: "컬리멤버십 결제 시 최대 14% 컬리적립금 제공\n신규 출시 기념 전월 실적 무관 1만5000원 캐시백 및 추가 적립 혜택",
@@ -1720,9 +1754,10 @@ document.addEventListener("DOMContentLoaded", () => {
     if (isGeoMode) {
       const categories = ["산업Q&A", "제품·기술", "성공사례", "기업뉴스", "브랜드 스토리"];
       const currentCat = data.activeCategory || "제품·기술";
+      const recCat = getRecommendedGeoCategory(currentGeoFormat, isMultiBrandMode);
 
       const navHtml = categories.map(cat => `
-        <span class="mkpick-nav-item ${cat === currentCat ? "active" : ""}">${cat}</span>
+        <span class="mkpick-nav-item ${cat === currentCat ? "active" : ""}" data-cat="${cat}" title="${cat === recCat ? `추천 카테고리 (${cat}) · 클릭하여 선택` : `${cat} 카테고리로 변경`}">${cat}</span>
       `).join("");
 
       headerHtml = `
@@ -1790,6 +1825,17 @@ document.addEventListener("DOMContentLoaded", () => {
 
     articleWrapper.innerHTML = headerHtml;
 
+    // 미리보기 상단 MK Pick 카테고리 직접 클릭 시 변경 지원
+    if (isGeoMode) {
+      articleWrapper.querySelectorAll(".mkpick-nav-item").forEach(navEl => {
+        navEl.addEventListener("click", () => {
+          const pickedCat = navEl.getAttribute("data-cat");
+          if (!pickedCat || currentGeoCategory === pickedCat) return;
+          applyGeoCategorySelection(pickedCat);
+        });
+      });
+    }
+
     const blocksContainer = document.createElement("div");
     blocksContainer.className = "article-blocks-container";
 
@@ -1803,8 +1849,36 @@ document.addEventListener("DOMContentLoaded", () => {
     updateCharCount();
   }
 
+  // 카테고리 수동 선택 적용 함수 (2번 선택창 & 3번 미리보기 상단 공용)
+  function applyGeoCategorySelection(selectedCat) {
+    currentGeoCategory = selectedCat;
+    const data = getCurrentData();
+    if (data && data.viewerType === "mk-pick") {
+      data.activeCategory = selectedCat;
+      if (data.badgeText) {
+        const parts = data.badgeText.split(" · ");
+        if (parts.length >= 3) {
+          parts[parts.length - 1] = selectedCat;
+          data.badgeText = parts.join(" · ");
+        } else if (parts.length === 2 && parts[0].startsWith("복수 브랜드")) {
+          parts[1] = selectedCat;
+          data.badgeText = parts.join(" · ");
+        } else {
+          data.badgeText = `${data.badgeText} · ${selectedCat}`;
+        }
+      }
+    }
+    syncGeoCategoryUI();
+    renderPreview();
+    const recCat = getRecommendedGeoCategory(currentGeoFormat, isMultiBrandMode);
+    showToast(selectedCat === recCat
+      ? `✓ MK Pick 카테고리가 추천 카테고리인 '${selectedCat}'(으)로 설정되었습니다.`
+      : `✓ MK Pick 카테고리가 '${selectedCat}'(으)로 변경되었습니다.`);
+  }
+
   // 4. 전체 화면 새로고침
   function updateAllViews() {
+    syncGeoCategoryUI();
     renderTitleCandidates();
     renderPreview();
   }
@@ -1985,13 +2059,14 @@ document.addEventListener("DOMContentLoaded", () => {
     });
   });
 
-  // 10. GEO 세부 형식 탭 전환
+  // 10. GEO 세부 형식 탭 전환 (유형에 맞는 추천 카테고리 자동 선택)
   subTabs.forEach(tab => {
     tab.addEventListener("click", () => {
       const selectedFormat = tab.getAttribute("data-geo-format");
       if (currentGeoFormat === selectedFormat) return;
 
       currentGeoFormat = selectedFormat;
+      currentGeoCategory = getRecommendedGeoCategory(currentGeoFormat, isMultiBrandMode);
 
       subTabs.forEach(t => {
         const isActive = t === tab;
@@ -2002,6 +2077,15 @@ document.addEventListener("DOMContentLoaded", () => {
       titleEditBox.classList.add("hidden");
       generatedArticleData = getActiveTemplateData();
       updateAllViews();
+    });
+  });
+
+  // 10-2. MK Pick 카테고리 선택 버튼 클릭
+  catBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const selectedCat = btn.getAttribute("data-geo-cat");
+      if (!selectedCat || currentGeoCategory === selectedCat) return;
+      applyGeoCategorySelection(selectedCat);
     });
   });
 
@@ -2188,6 +2272,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       currentMainStyle = "geo";
       currentGeoFormat = "info";
+      currentGeoCategory = getRecommendedGeoCategory("info", false);
       mainTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-style") === "geo"));
       geoFormatContainer.classList.remove("hidden");
       subTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-geo-format") === "info"));
@@ -2221,6 +2306,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
       currentMainStyle = "geo";
       currentGeoFormat = "story";
+      currentGeoCategory = getRecommendedGeoCategory("story", false);
       mainTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-style") === "geo"));
       geoFormatContainer.classList.remove("hidden");
       subTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-geo-format") === "story"));
@@ -2311,6 +2397,10 @@ document.addEventListener("DOMContentLoaded", () => {
 
       multiBrandList = parsed;
       isMultiBrandMode = true;
+      currentMainStyle = "geo";
+      mainTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-style") === "geo"));
+      geoFormatContainer.classList.remove("hidden");
+      currentGeoCategory = getRecommendedGeoCategory(currentGeoFormat, true);
       if (multiBrandPanel) multiBrandPanel.classList.remove("hidden");
       renderBrandCards();
       triggerGenerateArticle();
@@ -2322,6 +2412,10 @@ document.addEventListener("DOMContentLoaded", () => {
   if (addSingleBrandCardBtn) {
     addSingleBrandCardBtn.addEventListener("click", () => {
       isMultiBrandMode = true;
+      currentMainStyle = "geo";
+      mainTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-style") === "geo"));
+      geoFormatContainer.classList.remove("hidden");
+      currentGeoCategory = getRecommendedGeoCategory(currentGeoFormat, true);
       if (multiBrandPanel) multiBrandPanel.classList.remove("hidden");
       multiBrandList.push({
         id: Date.now() + Math.random(),
@@ -2340,6 +2434,7 @@ document.addEventListener("DOMContentLoaded", () => {
   if (closeMultiBrandPanelBtn) {
     closeMultiBrandPanelBtn.addEventListener("click", () => {
       isMultiBrandMode = false;
+      currentGeoCategory = getRecommendedGeoCategory(currentGeoFormat, false);
       if (multiBrandPanel) multiBrandPanel.classList.add("hidden");
       triggerGenerateArticle();
       showToast("단일 브랜드 일반 모드로 전환되었습니다.");
