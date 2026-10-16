@@ -1337,14 +1337,15 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (block.type === "5w1h") {
-      let text = "[한눈에 보는 핵심 개요 (5W1H)]\n";
+      const t = (block.title || "한눈에 보는 핵심 개요 (5W1H)").replace(/^\[|\]$/g, "").trim();
+      let text = `[${t}]\n`;
       text += `• 주체(Who): ${block.data.who}\n`;
       text += `• 일시(When): ${block.data.when}\n`;
       text += `• 장소(Where): ${block.data.where}\n`;
       text += `• 내용(What): ${block.data.what}\n`;
       text += `• 방식(How): ${block.data.how}\n`;
       text += `• 의의(Why): ${block.data.why}\n`;
-      return text;
+      return text.trim();
     }
 
     if (block.type === "dialogue") {
@@ -1356,7 +1357,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (block.type === "timeline") {
-      let text = `[${block.title || "주요 일정 및 추진 절차"}]\n`;
+      const t = (block.title || "주요 일정 및 추진 절차").replace(/^\[|\]$/g, "").trim();
+      let text = `[${t}]\n`;
       block.steps.forEach(s => {
         text += `▲ ${s.label}: ${s.desc}\n`;
       });
@@ -1364,7 +1366,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
 
     if (block.type === "checklist") {
-      let text = `[${block.title || "맞춤 선택 체크리스트"}]\n`;
+      const t = (block.title || "맞춤 선택 체크리스트").replace(/^\[|\]$/g, "").trim();
+      let text = `[${t}]\n`;
       block.items.forEach(it => {
         text += `✓ ${it}\n`;
       });
@@ -1831,6 +1834,89 @@ document.addEventListener("DOMContentLoaded", () => {
           .map(l => l.replace(/^(?:\d+[.)]|[-•*])\s*/, "").trim())
           .filter(Boolean);
         if (pts.length > 0) block.points = pts;
+      } else if (block.type === "5w1h") {
+        const lines = val.split("\n").map(l => l.trim()).filter(Boolean);
+        if (lines[0] && /^\[.*\]$/.test(lines[0])) {
+          block.title = lines.shift().replace(/^\[|\]$/g, "").trim();
+        }
+        const newData = { ...(block.data || {}) };
+        const keysOrder = ["who", "when", "where", "what", "how", "why"];
+        lines.forEach((line, idx) => {
+          const clean = line.replace(/^[•\-*]\s*/, "");
+          if (/^(?:주체|Who)\b/i.test(clean)) newData.who = clean.replace(/^[^:：]+[:：]\s*/, "").trim();
+          else if (/^(?:일시|When)\b/i.test(clean)) newData.when = clean.replace(/^[^:：]+[:：]\s*/, "").trim();
+          else if (/^(?:장소|Where)\b/i.test(clean)) newData.where = clean.replace(/^[^:：]+[:：]\s*/, "").trim();
+          else if (/^(?:내용|What)\b/i.test(clean)) newData.what = clean.replace(/^[^:：]+[:：]\s*/, "").trim();
+          else if (/^(?:방식|How)\b/i.test(clean)) newData.how = clean.replace(/^[^:：]+[:：]\s*/, "").trim();
+          else if (/^(?:의의|Why)\b/i.test(clean)) newData.why = clean.replace(/^[^:：]+[:：]\s*/, "").trim();
+          else if (idx < keysOrder.length) {
+            newData[keysOrder[idx]] = clean.replace(/^[^:：]+[:：]\s*/, "").trim();
+          }
+        });
+        block.data = newData;
+      } else if (block.type === "timeline") {
+        const lines = val.split("\n").map(l => l.trim()).filter(Boolean);
+        if (lines[0] && /^\[.*\]$/.test(lines[0])) {
+          block.title = lines.shift();
+        }
+        const steps = lines.map((line, idx) => {
+          const clean = line.replace(/^[▲▶•\-*]\s*/, "").trim();
+          const colonIdx = clean.search(/[:：]/);
+          if (colonIdx > 0 && colonIdx <= 15) {
+            return {
+              label: clean.slice(0, colonIdx).trim(),
+              desc: clean.slice(colonIdx + 1).trim()
+            };
+          }
+          return {
+            label: (block.steps && block.steps[idx] && block.steps[idx].label) || `${idx + 1}단계`,
+            desc: clean
+          };
+        }).filter(s => s.desc);
+        if (steps.length > 0) block.steps = steps;
+      } else if (block.type === "table") {
+        const lines = val.split("\n").map(l => l.trim()).filter(Boolean);
+        if (lines[0] && !lines[0].includes("\t") && (/^\[.*\]$/.test(lines[0]) || lines[0] === block.title)) {
+          block.title = lines.shift();
+        }
+        const colCount = (block.headers && block.headers.length) || 2;
+        const splitRow = (line) => {
+          if (line.includes("\t")) return line.split("\t").map(c => c.trim());
+          if (line.includes("|")) return line.split("|").map(c => c.trim()).filter(Boolean);
+          if (colCount === 2 && line.includes(":")) {
+            const ci = line.indexOf(":");
+            return [line.slice(0, ci).trim(), line.slice(ci + 1).trim()];
+          }
+          return line.split(/\s{2,}/).map(c => c.trim());
+        };
+        const parsedRows = lines.map(splitRow).filter(r => r.length > 0);
+        if (parsedRows.length >= 2) {
+          block.headers = parsedRows[0];
+          block.rows = parsedRows.slice(1);
+        } else if (parsedRows.length === 1) {
+          block.rows = parsedRows;
+        }
+      } else if (block.type === "company") {
+        const lines = val.split("\n").map(l => l.trim()).filter(Boolean);
+        if (lines[0] && /^\[.*\]$/.test(lines[0])) {
+          const m = lines.shift().match(/^\[(?:브랜드 정보\s*[:：]\s*)?([^\]]+)\]/);
+          if (m && m[1]) block.companyName = m[1].trim();
+        }
+        const items = [];
+        lines.forEach((line, idx) => {
+          const clean = line.replace(/^[•\-*]\s*/, "").trim();
+          const ci = clean.search(/[:：]/);
+          if (ci > 0) {
+            items.push({
+              label: clean.slice(0, ci).trim(),
+              val: clean.slice(ci + 1).trim()
+            });
+          } else if (clean) {
+            const fallbackLabel = (block.items && block.items[idx] && block.items[idx].label) || `항목 ${idx + 1}`;
+            items.push({ label: fallbackLabel, val: clean });
+          }
+        });
+        if (items.length > 0) block.items = items;
       } else if (block.type === "bluf") {
         block.content = val.replace(/^\[핵심 인용 요약[^\]]*\]\s*/, "").trim();
       } else if (block.type === "checklist") {
@@ -1855,22 +1941,22 @@ document.addEventListener("DOMContentLoaded", () => {
         });
         if (curQ && curA.length) dialogues.push({ q: curQ, a: curA.join(" ").trim() });
         if (dialogues.length > 0) block.dialogues = dialogues;
-      } else if (block.type === "text") {
-        if (block.title && val.startsWith(block.title)) {
-          block.content = val.slice(block.title.length).trim();
-        } else {
-          const parts = val.split(/\n\s*\n/);
-          if (block.title && parts.length >= 2 && parts[0].split("\n").length === 1 && parts[0].length <= 60) {
-            block.title = parts[0].trim();
-            block.content = parts.slice(1).join("\n\n").trim();
+      } else {
+        // 일반 본문 블록 (text): 원래 소제목(block.title)이 있던 블록이면 첫 줄을 소제목으로, 나머지를 본문으로 유지
+        if (block.title && block.title.trim()) {
+          const lines = val.split("\n");
+          const firstNonEmptyIdx = lines.findIndex(l => l.trim().length > 0);
+          const restLines = firstNonEmptyIdx >= 0 ? lines.slice(firstNonEmptyIdx + 1) : [];
+          const restText = restLines.join("\n").trim();
+          if (restText) {
+            block.title = lines[firstNonEmptyIdx].trim();
+            block.content = restText;
           } else {
             block.content = val;
           }
+        } else {
+          block.content = val;
         }
-      } else {
-        block.type = "text";
-        block.title = "";
-        block.content = val;
       }
 
       block.isEditing = false;
