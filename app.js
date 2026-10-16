@@ -422,7 +422,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 질문 주제어: 원문 첫 문장에서 '계약·출시·개최' 같은 핵심 행위어를 찾아 질문에 넣는다
     const leadS = (sentences || [])[0] || "";
-    const topicMatch = leadS.match(/계약|협약|MOU|출시|개최|수주|투자|인수|합병|선정|수상|공개|오픈|론칭|캠페인|행사|사업|공모/);
+    const topicMatch = leadS.match(/계약|협약|MOU|출시|개최|수주|투자|인수|합병|선정|수상|공개|오픈|론칭|캠페인|행사|전시|사업|공모/);
     const T = topicMatch ? `${company} ${topicMatch[0]}` : company;
 
     // 질문별 키워드를 우선순위대로 검사해 가장 관련 높은 원문 문장을 답으로 고른다
@@ -445,7 +445,7 @@ document.addEventListener("DOMContentLoaded", () => {
       { q: `${josa(company, "은", "는")} 이번에 무엇을 발표했나요?`, keys: [new RegExp("^" + escapeRegExp(leadS.slice(0, 10)))] },
       { q: (a) => /캐시백|할인|적립|혜택|무료|증정/.test(a) ? `${T} 혜택은 무엇인가요?` : `${T} 규모는 얼마나 되나요?`, keys: kw("규모", T_AMOUNT) },
       { q: `${T}, 언제 어떤 일정으로 진행되나요?`, keys: kw("일정", "기간", T_DATE, "인도", "개최", "예정") },
-      { q: `${T}, 어디에서 진행되나요?`, keys: location ? kw(location) : kw("소재", /에서\s*(?:건조|개최|진행|열리|생산)/) },
+      { q: `${T}, 어디에서 진행되나요?`, keys: location ? kw(location) : [/[가-힣A-Za-z0-9)]\s*에서\s*(?:건조|개최|진행|열리|생산|운영|선보)/, /[가-힣]+\s+소재\s+[가-힣]+/] },
       { q: `${josa(T, "은", "는")} 어떤 의미가 있나요?`, keys: kw("의미", "최초", "처음", "첫", "사례", "기록", "평가") },
       { q: `${T} 이후 기대되는 효과는 무엇인가요?`, keys: kw("기대", "전망", "목표", "계획") },
       { q: `${T}에 추가 조건이나 옵션이 있나요?`, keys: kw("옵션", "조건", "추가", "경우") },
@@ -527,7 +527,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const dates = uniq(bodyText.match(RE_DATE) || []);
     const productMatch = rawText.match(/[‘〈<「『]([^’〉>」』\n]{2,30})[’〉>」』]/);
     const product = productMatch ? productMatch[1].trim() : "";
-    const locationMatch = bodyText.match(/[가-힣A-Za-z0-9]+(?:엘타워|대극장|센트럴월드|코엑스|킨텍스|세종문화회관|컨벤션센터|호텔)/);
+    const locationMatch = bodyText.match(/[가-힣A-Za-z0-9]+(?:엘타워|대극장|센트럴월드|코엑스|킨텍스|세종문화회관|컨벤션센터|호텔|플라자|DDP|미술관|박물관|갤러리|전시장|아트센터|백화점|공연장)/);
     const sojaeMatch = bodyText.match(/(\S+\s\S+)\s소재\s([^\s,.]+?)(?:에서|에|의)?(?:\s(조선소|공장|센터|본사|연구소|캠퍼스|사옥))?(?=[\s,.에의])/);
     const location = locationMatch ? locationMatch[0]
       : (sojaeMatch ? `${sojaeMatch[1]} 소재 ${sojaeMatch[2]}${sojaeMatch[3] ? " " + sojaeMatch[3] : ""}` : "");
@@ -1562,15 +1562,16 @@ document.addEventListener("DOMContentLoaded", () => {
 
       let restHtml = "";
       if (rest.length > 0) {
+        const expanded = !!block.isExpanded;
         restHtml = `
           <div class="faq-expand-bar">
             <button type="button" class="btn-faq-toggle" id="faqToggleBtn_${block.id}">
-              <span class="faq-toggle-icon">▼</span>
-              <span class="faq-toggle-txt">추천 독자 질문 ${rest.length}개 더보기 (총 ${allFaqs.length}개 팬아웃 Q&A)</span>
+              <span class="faq-toggle-icon">${expanded ? "▲" : "▼"}</span>
+              <span class="faq-toggle-txt">${expanded ? `추천 질문 ${rest.length}개 접기` : `추천 독자 질문 ${rest.length}개 더보기 (총 ${allFaqs.length}개 팬아웃 Q&A)`}</span>
             </button>
             <span class="faq-fanout-badge">답변은 원문 문장 그대로 (최대 10개)</span>
           </div>
-          <div class="faq-extended-container hidden" id="faqExtended_${block.id}">
+          <div class="faq-extended-container ${expanded ? "" : "hidden"}" id="faqExtended_${block.id}">
             ${rest.map((f, i) => renderFaqRow(f, i + 3)).join("")}
           </div>
         `;
@@ -1597,6 +1598,7 @@ document.addEventListener("DOMContentLoaded", () => {
           toggleBtn.addEventListener("click", () => {
             const isHidden = extContainer.classList.contains("hidden");
             extContainer.classList.toggle("hidden", !isHidden);
+            block.isExpanded = isHidden;
             const icon = toggleBtn.querySelector(".faq-toggle-icon");
             const txt = toggleBtn.querySelector(".faq-toggle-txt");
             if (icon) icon.textContent = isHidden ? "▲" : "▼";
@@ -1751,9 +1753,126 @@ document.addEventListener("DOMContentLoaded", () => {
         alert("내용을 입력해 주세요.");
         return;
       }
-      block.type = "text";
-      block.title = "";
-      block.content = val;
+
+      if (block.type === "faq" || block.id === "geo_faq" || block.id === "mb_faq") {
+        // FAQ 수정 시: 질문(Q)과 답변(A) 구조를 유지하여 개별 질문 카드로 다시 분리
+        const lines = val
+          .split("\n")
+          .map(l => l.trim())
+          .filter(l => l.length > 0 && !/^\[.*FAQ.*\]$/i.test(l) && !/^\[자주 묻는 질문/.test(l));
+
+        const parsedFaqs = [];
+        let curQ = "";
+        let curA = [];
+
+        const isQuestionLine = (line) => {
+          if (/^(?:Q\d*|질문\s*\d*)[.:\s]/i.test(line)) return true;
+          if (/^(?:A\d*|답변\s*\d*)[.:\s]/i.test(line)) return false;
+          return /\?\s*$/.test(line);
+        };
+
+        lines.forEach(line => {
+          if (isQuestionLine(line)) {
+            if (curQ && curA.length > 0) {
+              parsedFaqs.push({
+                id: `faq_${parsedFaqs.length + 1}`,
+                q: curQ,
+                a: curA.join(" ").trim(),
+                enabled: true
+              });
+            }
+            curQ = line.replace(/^(?:Q\d*|질문\s*\d*)[.:\s]*/i, "").trim();
+            curA = [];
+          } else {
+            const cleanA = line.replace(/^(?:A\d*|답변\s*\d*)[.:\s]*/i, "").trim();
+            if (!curQ) {
+              curQ = cleanA;
+            } else {
+              curA.push(cleanA);
+            }
+          }
+        });
+
+        if (curQ && curA.length > 0) {
+          parsedFaqs.push({
+            id: `faq_${parsedFaqs.length + 1}`,
+            q: curQ,
+            a: curA.join(" ").trim(),
+            enabled: true
+          });
+        }
+
+        // 물음표 없이 빈 줄로만 질문/답변을 구분한 경우 폴백
+        if (parsedFaqs.length === 0) {
+          const chunks = val.replace(/^\[.*\]\s*/m, "").trim().split(/\n\s*\n/);
+          chunks.forEach((ch, idx) => {
+            const cLines = ch.split("\n").map(l => l.trim()).filter(Boolean);
+            if (cLines.length >= 2) {
+              parsedFaqs.push({
+                id: `faq_${idx + 1}`,
+                q: cLines[0].replace(/^(?:Q\d*|질문\s*\d*)[.:\s]*/i, "").trim(),
+                a: cLines.slice(1).join(" ").replace(/^(?:A\d*|답변\s*\d*)[.:\s]*/i, "").trim(),
+                enabled: true
+              });
+            }
+          });
+        }
+
+        if (parsedFaqs.length > 0) {
+          block.type = "faq";
+          block.faqs = parsedFaqs;
+          if (parsedFaqs.length > 3) block.isExpanded = true;
+        }
+      } else if (block.type === "summary") {
+        const pts = val
+          .split("\n")
+          .map(l => l.trim())
+          .filter(l => l.length > 0 && !/^\[3줄 핵심 요약\]/.test(l))
+          .map(l => l.replace(/^(?:\d+[.)]|[-•*])\s*/, "").trim())
+          .filter(Boolean);
+        if (pts.length > 0) block.points = pts;
+      } else if (block.type === "bluf") {
+        block.content = val.replace(/^\[핵심 인용 요약[^\]]*\]\s*/, "").trim();
+      } else if (block.type === "checklist") {
+        const lines = val.split("\n").map(l => l.trim()).filter(Boolean);
+        if (lines[0] && /^\[.*\]$/.test(lines[0])) {
+          block.title = lines.shift();
+        }
+        const items = lines.map(l => l.replace(/^[✓✔•\-*]\s*/, "").trim()).filter(Boolean);
+        if (items.length > 0) block.items = items;
+      } else if (block.type === "dialogue") {
+        const lines = val.split("\n").map(l => l.trim()).filter(l => l.length > 0 && !/^\[인터뷰 대담\]/.test(l));
+        const dialogues = [];
+        let curQ = "", curA = [];
+        lines.forEach(line => {
+          if (/^Q[.:\s]/i.test(line) || (/\?\s*$/.test(line) && !/^A[.:\s]/i.test(line))) {
+            if (curQ && curA.length) dialogues.push({ q: curQ, a: curA.join(" ").trim() });
+            curQ = line.replace(/^Q[.:\s]*/i, "").trim();
+            curA = [];
+          } else {
+            curA.push(line.replace(/^A[.:\s]*/i, "").trim());
+          }
+        });
+        if (curQ && curA.length) dialogues.push({ q: curQ, a: curA.join(" ").trim() });
+        if (dialogues.length > 0) block.dialogues = dialogues;
+      } else if (block.type === "text") {
+        if (block.title && val.startsWith(block.title)) {
+          block.content = val.slice(block.title.length).trim();
+        } else {
+          const parts = val.split(/\n\s*\n/);
+          if (block.title && parts.length >= 2 && parts[0].split("\n").length === 1 && parts[0].length <= 60) {
+            block.title = parts[0].trim();
+            block.content = parts.slice(1).join("\n\n").trim();
+          } else {
+            block.content = val;
+          }
+        }
+      } else {
+        block.type = "text";
+        block.title = "";
+        block.content = val;
+      }
+
       block.isEditing = false;
       renderPreview();
       showToast(`'${block.label}' 내용이 수정되었습니다.`);
