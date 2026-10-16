@@ -138,6 +138,11 @@ body.resizing * {
   display: flex;
   flex-direction: column;
   gap: 20px;
+  position: sticky;
+  top: 16px;
+  max-height: calc(100vh - 36px);
+  overflow-y: auto;
+  padding-right: 4px;
 }
 
 /* 좌우 크기 조절 확장바 (Splitter Bar) */
@@ -227,6 +232,9 @@ body.resizing * {
   .layout-horizontal .editor-column {
     width: 100% !important;
     max-width: 100% !important;
+    position: static;
+    max-height: none;
+    overflow-y: visible;
   }
   .layout-horizontal .viewer-column {
     position: static;
@@ -819,13 +827,43 @@ body.resizing * {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 10px;
   user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.optional-toggle:hover {
+  background-color: #FFFFFF;
+}
+
+.optional-toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
 }
 
 .optional-title {
   font-size: 14px;
   font-weight: 700;
   color: #111111;
+}
+
+.optional-sub-hint {
+  font-size: 12px;
+  font-weight: 500;
+  color: #757575;
+  background-color: #FFFFFF;
+  border: 0.5px solid #E0E0E0;
+  padding: 2px 8px;
+  border-radius: 6px;
+}
+
+.optional-sub-hint.has-value {
+  color: #7A5B00;
+  background-color: #FFF4CC;
+  border-color: #E0E0E0;
+  font-weight: 700;
 }
 
 .optional-indicator {
@@ -840,7 +878,7 @@ body.resizing * {
 
 .optional-fields {
   display: none;
-  padding: 12px 16px 16px;
+  padding: 14px 16px 16px;
   border-top: 0.5px solid #E0E0E0;
   background-color: #FFFFFF;
 }
@@ -1066,6 +1104,51 @@ body.resizing * {
   gap: 8px;
   flex-shrink: 0;
   margin-left: auto;
+  flex-wrap: wrap;
+}
+
+/* 본문 글자 크기 조절 컨트롤 */
+.font-size-control {
+  display: inline-flex;
+  align-items: center;
+  background-color: #F7F7F7;
+  border: 0.5px solid #E0E0E0;
+  border-radius: 8px;
+  padding: 3px;
+  gap: 2px;
+}
+
+.font-size-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: #757575;
+  padding: 0 7px 0 6px;
+  white-space: nowrap;
+}
+
+.font-size-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 0.5px solid transparent;
+  background-color: transparent;
+  color: #757575;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.font-size-btn:hover {
+  color: #111111;
+  background-color: #FFFFFF;
+}
+
+.font-size-btn.active {
+  background-color: #111111;
+  color: #FFFFFF;
+  font-weight: 700;
 }
 
 /* 결과 화면 상단 고정 (긴 기사를 내려도 복사 버튼이 항상 보이도록) */
@@ -1080,6 +1163,14 @@ body.resizing * {
   border-radius: 12px 12px 0 0;
 }
 
+.safety-banner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
 /* AI 초안 안내: 한 줄로 작게 */
 .safety-banner-notice {
   font-size: 12px;
@@ -1091,8 +1182,88 @@ body.resizing * {
   align-self: flex-start;
 }
 
+.inline-edit-guide-hint {
+  font-size: 12px;
+  color: #757575;
+  font-weight: 500;
+}
+
 /* ==========================================================================
-   제목 후보 카드 영역 (싱글 추천 & 새로고침 스타일 전환)
+   원문 vs 기사 핵심 수치 1초 대조 바 (팩트체크 업그레이드)
+   ========================================================================== */
+.fact-quick-check-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background-color: #F7F7F7;
+  border: 0.5px solid #E0E0E0;
+  border-radius: 8px;
+  flex-wrap: wrap;
+}
+
+.fact-quick-check-bar.hidden {
+  display: none;
+}
+
+.fact-bar-left {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.fact-bar-title {
+  font-size: 12px;
+  font-weight: 800;
+  color: #111111;
+}
+
+.fact-bar-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: #7A5B00;
+  background-color: #FFF4CC;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.fact-chips-list {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  flex: 1;
+}
+
+.fact-chip-btn {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: #111111;
+  background-color: #FFFFFF;
+  border: 0.5px solid #E0E0E0;
+  padding: 3px 9px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.fact-chip-btn:hover,
+.fact-chip-btn.active {
+  background-color: #FFF4CC;
+  border-color: #111111;
+  color: #111111;
+}
+
+mark.fact-highlight.fact-flash-target {
+  outline: 1.5px solid #111111;
+  background-color: #FE6B00 !important;
+  color: #111111 !important;
+}
+
+/* ==========================================================================
+   제목 후보 카드 영역 (싱글 추천 & 5개 한눈에 비교 목록)
    ========================================================================== */
 .title-candidate-card {
   border: 0.5px solid #E0E0E0;
@@ -1146,6 +1317,7 @@ body.resizing * {
   display: flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
 }
 
 /* 다른 스타일 추천 (새로고침) 버튼: 보조 버튼 */
@@ -1167,6 +1339,11 @@ body.resizing * {
 
 .btn-refresh-title:hover {
   background-color: #F7F7F7;
+}
+
+.btn-refresh-title.active {
+  background-color: #111111;
+  color: #FFFFFF;
 }
 
 .btn-refresh-title .refresh-icon {
@@ -1194,13 +1371,98 @@ body.resizing * {
 }
 
 .active-title-text {
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 800;
   color: #111111;
   line-height: 1.45;
   letter-spacing: -0.4px;
   word-break: keep-all;
   transition: opacity 0.15s ease;
+}
+
+/* 추천 제목 5개 한눈에 보기 리스트 */
+.all-titles-list {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 0.5px solid #E0E0E0;
+}
+
+.all-titles-list.hidden {
+  display: none;
+}
+
+.title-option-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 0.5px solid #E0E0E0;
+  background-color: #FFFFFF;
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  transition: all 0.15s ease;
+}
+
+.title-option-item:hover {
+  background-color: #F7F7F7;
+  border-color: #111111;
+}
+
+.title-option-item.active {
+  background-color: #F7F7F7;
+  border-color: #FE6B00;
+}
+
+.title-option-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+
+.title-option-badge {
+  font-size: 11px;
+  font-weight: 700;
+  color: #111111;
+  background-color: #F7F7F7;
+  border: 0.5px solid #E0E0E0;
+  padding: 2px 7px;
+  border-radius: 4px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.title-option-item.active .title-option-badge {
+  background-color: #FE6B00;
+  border-color: #FE6B00;
+  color: #111111;
+}
+
+.title-option-text {
+  font-size: 14px;
+  font-weight: 700;
+  color: #111111;
+  line-height: 1.4;
+  word-break: keep-all;
+}
+
+.title-option-check {
+  font-size: 12px;
+  font-weight: 800;
+  color: #757575;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.title-option-item.active .title-option-check {
+  color: #111111;
 }
 
 .title-edit-box {
@@ -1221,13 +1483,99 @@ body.resizing * {
 }
 
 /* ==========================================================================
-   기사 미리보기 컨테이너 (실제 웹사이트 화면처럼 보이는 뷰어 틀)
+   기사 미리보기 컨테이너 (실제 웹사이트 화면처럼 보이는 뷰어 틀 + 폰트 크기 조절)
    ========================================================================== */
 .preview-container {
   border: 0.5px solid #E0E0E0;
   border-radius: 12px;
   background-color: #FFFFFF;
   overflow: hidden;
+  --body-font-size: 16px;
+  --sub-font-size: 18px;
+  --headline-font-size: 26px;
+  --caption-font-size: 13px;
+}
+
+.preview-container.font-size-sm {
+  --body-font-size: 14px;
+  --sub-font-size: 16px;
+  --headline-font-size: 24px;
+  --caption-font-size: 12px;
+}
+
+.preview-container.font-size-md {
+  --body-font-size: 16px;
+  --sub-font-size: 18px;
+  --headline-font-size: 26px;
+  --caption-font-size: 13px;
+}
+
+.preview-container.font-size-lg {
+  --body-font-size: 18px;
+  --sub-font-size: 20px;
+  --headline-font-size: 28px;
+  --caption-font-size: 14px;
+}
+
+.preview-container.font-size-xl {
+  --body-font-size: 20px;
+  --sub-font-size: 22px;
+  --headline-font-size: 30px;
+  --caption-font-size: 15px;
+}
+
+/* 뷰어 내 인라인 클릭 수정 요소 (부제, 기자명, 날짜, 사진 설명) */
+.inline-editable {
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.15s ease, outline-color 0.15s ease;
+  position: relative;
+}
+
+.inline-editable:hover {
+  background-color: #F7F7F7;
+  outline: 0.5px dashed #757575;
+}
+
+.inline-edit-badge {
+  font-size: 11px;
+  font-weight: 600;
+  color: #757575;
+  background-color: #FFFFFF;
+  border: 0.5px solid #E0E0E0;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-left: 6px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.inline-editable:hover .inline-edit-badge {
+  opacity: 1;
+}
+
+.inline-edit-input {
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  color: #111111;
+  background-color: #FFFFFF;
+  border: 0.5px solid #111111;
+  border-radius: 6px;
+  padding: 4px 8px;
+}
+
+.inline-edit-textarea {
+  width: 100%;
+  font-family: inherit;
+  font-size: var(--body-font-size, 16px);
+  color: #111111;
+  background-color: #FFFFFF;
+  border: 0.5px solid #111111;
+  border-radius: 6px;
+  padding: 8px 10px;
+  line-height: 1.6;
+  resize: vertical;
 }
 
 /* 뷰어 최상단 윈도우 스타일 헤더 */
@@ -1255,7 +1603,7 @@ body.resizing * {
 }
 
 .viewer-article-wrapper {
-  max-width: 720px;
+  max-width: 740px;
   margin: 0 auto;
   padding: 36px 24px 48px;
 }
@@ -1272,7 +1620,7 @@ body.resizing * {
 }
 
 .mk-news-viewer .mk-headline-title {
-  font-size: 26px;
+  font-size: var(--headline-font-size, 26px);
   font-weight: 800;
   line-height: 1.35;
   color: #111111;
@@ -1285,9 +1633,10 @@ body.resizing * {
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--caption-font-size, 13px);
   color: #757575;
   padding-bottom: 14px;
+  flex-wrap: wrap;
 }
 
 .mk-news-viewer .mk-meta-row strong {
@@ -1319,10 +1668,10 @@ body.resizing * {
 /* 좌측 세로선 부제 박스 (실제 매경 뉴스 레이아웃) */
 .mk-news-viewer .mk-sub-headline-box {
   border-left: 2px solid #E0E0E0;
-  padding-left: 14px;
+  padding: 4px 8px 4px 14px;
   margin-bottom: 24px;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--body-font-size, 16px);
+  line-height: 1.65;
   color: #757575;
   white-space: pre-line;
 }
@@ -1350,7 +1699,7 @@ body.resizing * {
 }
 
 .mk-lead-image-caption {
-  font-size: 12px;
+  font-size: var(--caption-font-size, 13px);
   color: #757575;
   padding: 8px 12px;
   border-top: 0.5px solid #E0E0E0;
@@ -1422,7 +1771,7 @@ body.resizing * {
 }
 
 .mk-pick-viewer .mk-headline-title {
-  font-size: 26px;
+  font-size: var(--headline-font-size, 26px);
   font-weight: 800;
   line-height: 1.35;
   color: #111111;
@@ -1432,10 +1781,10 @@ body.resizing * {
 
 .mk-pick-viewer .mk-sub-headline-box {
   border-left: 2px solid #FE6B00; /* MK Pick은 주황 포인트 세로바 */
-  padding-left: 14px;
+  padding: 4px 8px 4px 14px;
   margin-bottom: 22px;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--body-font-size, 16px);
+  line-height: 1.65;
   color: #757575;
   white-space: pre-line;
 }
@@ -1443,7 +1792,7 @@ body.resizing * {
 /* MK Pick 시그니처: 주황색 밑줄 링크형 소제목 */
 .mkpick-orange-heading {
   color: #111111;
-  font-size: 17px;
+  font-size: var(--sub-font-size, 18px);
   font-weight: 800;
   text-decoration: underline;
   text-decoration-color: #FE6B00;
@@ -1660,9 +2009,9 @@ body.fact-highlight-disabled mark.fact-highlight {
   to { transform: rotate(360deg); }
 }
 
-/* 블록 본문 서식 (실제 매경 뉴스 규격) */
+/* 블록 본문 서식 (실제 매경 뉴스 규격 + 사용자 글자 크기 조절 연동) */
 .article-paragraph-text {
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   line-height: 1.85;
   color: #111111;
   word-break: keep-all;
@@ -1671,7 +2020,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 
 /* 본문 소제목 */
 .article-section-subhead {
-  font-size: 17px;
+  font-size: var(--sub-font-size, 18px);
   font-weight: 800;
   color: #111111;
   margin-bottom: 8px;
@@ -1696,11 +2045,11 @@ body.fact-highlight-disabled mark.fact-highlight {
 
 .block-edit-textarea {
   width: 100%;
-  min-height: 110px;
-  padding: 10px;
+  min-height: 130px;
+  padding: 12px;
   font-family: inherit;
-  font-size: 14px;
-  line-height: 1.6;
+  font-size: var(--body-font-size, 16px);
+  line-height: 1.65;
   border: 0.5px solid #111111;
   border-radius: 6px;
   resize: vertical;
@@ -1721,7 +2070,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 }
 
 .summary-card-title {
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   font-weight: 800;
   color: #111111;
   margin-bottom: 8px;
@@ -1729,7 +2078,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 
 .summary-card-list {
   padding-left: 20px;
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   line-height: 1.75;
   color: #111111;
 }
@@ -1738,7 +2087,7 @@ body.fact-highlight-disabled mark.fact-highlight {
   margin-top: 10px;
   padding-top: 8px;
   border-top: 0.5px dashed #E0E0E0;
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   font-weight: 700;
   color: #111111;
 }
@@ -1752,7 +2101,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 .mkpick-data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   border: 0.5px solid #E0E0E0;
 }
 
@@ -1812,7 +2161,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 }
 
 .geo-bluf-text {
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   font-weight: 600;
   color: #111111;
   line-height: 1.6;
@@ -1886,7 +2235,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 }
 
 .faq-question-text {
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   font-weight: 700;
   color: #111111;
   line-height: 1.45;
@@ -1925,7 +2274,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 }
 
 .faq-answer-text {
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   color: #111111;
   line-height: 1.65;
   padding-left: 28px;
@@ -1989,7 +2338,7 @@ body.fact-highlight-disabled mark.fact-highlight {
   border: 0.5px solid #E0E0E0;
   border-radius: 8px;
   padding: 16px;
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
 }
 
 .brand-card-row {
@@ -2016,7 +2365,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 }
 
 .five-w-title {
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   font-weight: 800;
   color: #111111;
   margin-bottom: 12px;
@@ -2049,12 +2398,12 @@ body.fact-highlight-disabled mark.fact-highlight {
 .five-w-item {
   display: flex;
   align-items: baseline;
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   line-height: 1.5;
 }
 
 .five-w-label {
-  width: 78px;
+  width: 82px;
   flex-shrink: 0;
   font-weight: 700;
   color: #111111;
@@ -2088,7 +2437,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 }
 
 .interview-q {
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   font-weight: 800;
   color: #111111;
   margin-bottom: 8px;
@@ -2108,7 +2457,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 }
 
 .interview-a {
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   line-height: 1.75;
   color: #111111;
   padding-left: 28px;
@@ -2124,7 +2473,7 @@ body.fact-highlight-disabled mark.fact-highlight {
 }
 
 .timeline-process-title {
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   font-weight: 800;
   color: #111111;
   margin-bottom: 12px;
@@ -2142,7 +2491,7 @@ body.fact-highlight-disabled mark.fact-highlight {
   border: 0.5px solid #E0E0E0;
   border-radius: 6px;
   padding: 8px 12px;
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2171,7 +2520,7 @@ body.fact-highlight-disabled mark.fact-highlight {
   align-items: flex-start;
   gap: 10px;
   margin-bottom: 10px;
-  font-size: 14px;
+  font-size: var(--body-font-size, 16px);
   line-height: 1.6;
 }
 

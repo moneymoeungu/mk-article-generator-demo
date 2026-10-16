@@ -103,42 +103,45 @@
         </div>
       </div>
 
-      <!-- 2. 웹사이트 링크 및 기업 PDF 웹진 (추가 정보 입력 바로 위 나란히 배치) -->
-      <div class="sub-materials-grid">
-        <!-- 웹사이트 링크 -->
-        <div class="input-box">
-          <div class="input-label-row">
-            <label class="input-label">기업·브랜드 웹사이트 링크 (선택)</label>
-            <button type="button" id="addUrlBtn" class="btn btn-secondary-sm">+ 링크 추가</button>
-          </div>
-          <div id="urlListContainer" class="url-list">
-            <div class="url-input-item">
-              <input type="url" class="input-field url-input" placeholder="https://example.com/company">
-              <button type="button" class="btn-icon-remove remove-url-btn" title="삭제">&times;</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- PDF 웹진 파일 업로드 -->
-        <div class="input-box">
-          <label class="input-label">기업 PDF 웹진 (선택)</label>
-          <div class="pdf-dropzone" id="pdfDropzone">
-            <input type="file" id="pdfFileInput" accept=".pdf" class="file-input-hidden">
-            <div class="dropzone-content">
-              <span class="dropzone-title">PDF 파일을 클릭하여 선택하거나 여기로 끌어다 놓으세요</span>
-              <span class="dropzone-subtitle" id="pdfFileName">PDF 파일 최대 50MB</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- 추가 선택 정보 -->
+      <!-- 보조 자료 및 추가 선택 정보 (기본 접힘: 스크롤 없이 2번 스타일 선택이 바로 보이도록 통합) -->
       <div class="optional-box">
         <div class="optional-toggle" id="optionalToggle">
-          <span class="optional-title">추가 정보 입력 (선택 사항)</span>
+          <div class="optional-toggle-left">
+            <span class="optional-title">+ 참고 자료 및 추가 정보 더 넣기 (선택)</span>
+            <span class="optional-sub-hint" id="optionalSummaryBadge">웹사이트 링크 · PDF 웹진 · 기업명 · 강조 메모</span>
+          </div>
           <span class="optional-indicator" id="optionalIndicator">&#9662;</span>
         </div>
         <div class="optional-fields" id="optionalFields">
+          <!-- 웹사이트 링크 및 기업 PDF 웹진 -->
+          <div class="sub-materials-grid">
+            <!-- 웹사이트 링크 -->
+            <div class="input-box">
+              <div class="input-label-row">
+                <label class="input-label">기업·브랜드 웹사이트 링크 (선택)</label>
+                <button type="button" id="addUrlBtn" class="btn btn-secondary-sm">+ 링크 추가</button>
+              </div>
+              <div id="urlListContainer" class="url-list">
+                <div class="url-input-item">
+                  <input type="url" class="input-field url-input" placeholder="https://example.com/company">
+                  <button type="button" class="btn-icon-remove remove-url-btn" title="삭제">&times;</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- PDF 웹진 파일 업로드 -->
+            <div class="input-box">
+              <label class="input-label">기업 PDF 웹진 (선택)</label>
+              <div class="pdf-dropzone" id="pdfDropzone">
+                <input type="file" id="pdfFileInput" accept=".pdf" class="file-input-hidden">
+                <div class="dropzone-content">
+                  <span class="dropzone-title">PDF 파일을 클릭하여 선택하거나 여기로 끌어다 놓으세요</span>
+                  <span class="dropzone-subtitle" id="pdfFileName">PDF 파일 최대 50MB</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div class="optional-row">
             <div class="form-group flex-1">
               <label for="brandNameInput" class="input-label-sub">기업명 / 브랜드명</label>
@@ -243,6 +246,14 @@
           <span class="char-count-badge" id="charCountBadge" title="실시간 기사 본문 글자 수">본문 0자 · 읽기 약 1분</span>
         </div>
         <div class="result-top-actions">
+          <!-- 본문 글자 크기 조절 컨트롤 -->
+          <div class="font-size-control" id="fontSizeControlGroup" role="group" aria-label="본문 글자 크기 조절">
+            <span class="font-size-label">글자 크기</span>
+            <button type="button" class="font-size-btn" data-font-size="sm" title="작게 (14px)">작게</button>
+            <button type="button" class="font-size-btn active" data-font-size="md" title="보통 (16px)">보통</button>
+            <button type="button" class="font-size-btn" data-font-size="lg" title="크게 (18px)">크게</button>
+            <button type="button" class="font-size-btn" data-font-size="xl" title="아주 크게 (20px)">특대</button>
+          </div>
           <label class="fact-toggle-label" title="기사 본문 속의 숫자, 비율(%), 금액, 일정 등을 한눈에 확인하도록 강조합니다">
             <input type="checkbox" id="toggleFactHighlight" checked>
             <span>팩트 수치 강조</span>
@@ -254,22 +265,39 @@
         </div>
       </div>
 
-      <div class="safety-banner-notice">
-        AI 초안입니다. 발행 전 사실 확인이 필요합니다. (복사 시 이 문구는 빠집니다)
+      <div class="safety-banner-row">
+        <div class="safety-banner-notice">
+          AI 초안입니다. 발행 전 사실 확인이 필요합니다. (복사 시 이 문구는 빠집니다)
+        </div>
+        <span class="inline-edit-guide-hint">※ 제목·부제·기자명·사진설명·본문을 클릭해 바로 수정할 수 있습니다</span>
       </div>
 
-      <!-- 제목 후보 카드 영역 (싱글 뷰 & 퀵 새로고침 형식) -->
+      <!-- 원문 vs 기사 핵심 수치 1초 대조 바 -->
+      <div class="fact-quick-check-bar" id="factQuickCheckBar">
+        <div class="fact-bar-left">
+          <span class="fact-bar-title">검출된 핵심 수치</span>
+          <span class="fact-bar-count" id="factBarCount">0개</span>
+        </div>
+        <div class="fact-chips-list" id="factChipsList">
+          <!-- JS에서 추출된 수치 배지가 렌더링됩니다 -->
+        </div>
+      </div>
+
+      <!-- 제목 후보 카드 영역 (싱글 뷰 & 5개 전체 펼쳐보기 지원) -->
       <div class="title-candidate-card" id="titleCandidateCard">
         <div class="candidate-header">
           <div class="candidate-title-group">
             <h3 class="candidate-heading">기사 제목</h3>
             <span class="title-style-tag" id="titleStyleTag">혜택 강조형</span>
-            <span class="title-counter-badge" id="titleCounterBadge">1 / 4</span>
+            <span class="title-counter-badge" id="titleCounterBadge">1 / 5</span>
           </div>
           <div class="title-direct-actions">
-            <button type="button" id="refreshTitleBtn" class="btn btn-refresh-title" title="클릭할 때마다 다른 스타일의 제목으로 전환됩니다">
+            <button type="button" id="toggleAllTitlesBtn" class="btn btn-refresh-title" title="추천 제목 5개를 한눈에 펼쳐서 비교하고 선택합니다">
+              추천 제목 5개 한눈에 보기 &#9662;
+            </button>
+            <button type="button" id="refreshTitleBtn" class="btn btn-secondary-sm" title="클릭할 때마다 다음 추천 제목으로 전환됩니다">
               <svg class="icon refresh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36L21 8"/><path d="M21 3v5h-5"/></svg>
-              다른 스타일 제목 추천
+              다음 제목
             </button>
             <button type="button" id="editActiveTitleBtn" class="btn btn-secondary-sm" title="제목을 직접 수정합니다">직접 수정</button>
             <button type="button" id="copyActiveTitleBtn" class="btn btn-secondary-sm" title="현재 제목을 복사합니다">제목 복사</button>
@@ -279,6 +307,11 @@
         <!-- 현재 추천된 제목 1개 표시 카드 -->
         <div class="active-title-card" id="activeTitleCard">
           <div class="active-title-text" id="activeTitleDisplay">기사 제목이 이곳에 표시됩니다</div>
+        </div>
+
+        <!-- 추천 제목 5개 한눈에 비교·선택 목록 (기본은 펼쳐지거나 토글 가능) -->
+        <div class="all-titles-list hidden" id="allTitlesListContainer">
+          <!-- JS에서 5개 추천 제목 후보가 렌더링됩니다 -->
         </div>
 
         <!-- 제목 직접 수정창 (숨김 기본값) -->
@@ -293,7 +326,7 @@
       </div>
 
       <!-- 기사 미리보기 및 블록별 편집 영역 (실제 매경/MK Pick 사이트 뷰어) -->
-      <article class="preview-container" id="previewContainer">
+      <article class="preview-container font-size-md" id="previewContainer">
         <!-- 자바스크립트로 선택된 스타일에 맞춰 실제 웹사이트 뷰어가 렌더링됩니다 -->
       </article>
     </section>

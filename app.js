@@ -20,10 +20,13 @@ document.addEventListener("DOMContentLoaded", () => {
   const loadSample5Btn = document.getElementById("loadSample5Btn");
   const clearInputsBtn = document.getElementById("clearInputsBtn");
 
-  // 제목 후보 관련 (싱글 뷰 & 새로고침 스타일 전환)
+  // 제목 후보 관련 (싱글 뷰 & 5개 한눈에 보기)
+  const activeTitleCard = document.getElementById("activeTitleCard");
   const activeTitleDisplay = document.getElementById("activeTitleDisplay");
   const titleStyleTag = document.getElementById("titleStyleTag");
   const titleCounterBadge = document.getElementById("titleCounterBadge");
+  const toggleAllTitlesBtn = document.getElementById("toggleAllTitlesBtn");
+  const allTitlesListContainer = document.getElementById("allTitlesListContainer");
   const refreshTitleBtn = document.getElementById("refreshTitleBtn");
   const editActiveTitleBtn = document.getElementById("editActiveTitleBtn");
   const copyActiveTitleBtn = document.getElementById("copyActiveTitleBtn");
@@ -33,8 +36,12 @@ document.addEventListener("DOMContentLoaded", () => {
   const cancelTitleEditBtn = document.getElementById("cancelTitleEditBtn");
   const charCountBadge = document.getElementById("charCountBadge");
 
-  // 기사 미리보기 및 복사
+  // 기사 미리보기, 폰트 크기, 팩트 수치 대조 바 및 복사
   const previewContainer = document.getElementById("previewContainer");
+  const fontSizeBtns = document.querySelectorAll(".font-size-btn");
+  const factQuickCheckBar = document.getElementById("factQuickCheckBar");
+  const factBarCount = document.getElementById("factBarCount");
+  const factChipsList = document.getElementById("factChipsList");
   const copyAllTopBtn = document.getElementById("copyAllTopBtn");
   const toastNotice = document.getElementById("toastNotice");
   const toggleFactHighlight = document.getElementById("toggleFactHighlight");
@@ -62,6 +69,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const optionalToggle = document.getElementById("optionalToggle");
   const optionalFields = document.getElementById("optionalFields");
   const optionalIndicator = document.getElementById("optionalIndicator");
+  const optionalSummaryBadge = document.getElementById("optionalSummaryBadge");
   const brandNameInput = document.getElementById("brandNameInput");
   const keyPointInput = document.getElementById("keyPointInput");
 
@@ -76,9 +84,66 @@ document.addEventListener("DOMContentLoaded", () => {
   let currentGeoFormat = "info"; // 'info' | 'interview' | 'compare' | 'recommend' | 'story'
   let currentGeoCategory = "제품·기술"; // '산업Q&A' | '제품·기술' | '성공사례' | '기업뉴스' | '브랜드 스토리'
   let currentLayoutMode = localStorage.getItem("mk_layout_mode") || "horizontal"; // 'horizontal' (가로 분할) | 'vertical' (세로 롤백)
+  let currentFontSize = localStorage.getItem("mk_font_size") || "md"; // 'sm' (14px) | 'md' (16px) | 'lg' (18px) | 'xl' (20px)
+  let savedReporterName = localStorage.getItem("mk_reporter_name") || "";
+  let hasManualEdits = false; // 사용자가 직접 기사 내용을 수정했는지 여부
   let isMultiBrandMode = false; // 복수 브랜드 모음 모드 여부
   let multiBrandList = []; // [ { id, brand, campaign, benefit, content } ]
   let multiBrandIntro = ""; // 복수 브랜드 자료 맨 앞의 도입부 원문
+
+  // 본문 글자 크기 조절 적용 함수
+  function applyFontSize(size, notify = false) {
+    const validSizes = ["sm", "md", "lg", "xl"];
+    const nextSize = validSizes.includes(size) ? size : "md";
+    currentFontSize = nextSize;
+    localStorage.setItem("mk_font_size", nextSize);
+
+    if (previewContainer) {
+      validSizes.forEach(s => previewContainer.classList.remove(`font-size-${s}`));
+      previewContainer.classList.add(`font-size-${nextSize}`);
+    }
+    fontSizeBtns.forEach(btn => {
+      btn.classList.toggle("active", btn.getAttribute("data-font-size") === nextSize);
+    });
+
+    if (notify) {
+      const labelMap = { sm: "작게(14px)", md: "보통(16px)", lg: "크게(18px)", xl: "특대(20px)" };
+      showToast(`✓ 본문 글자 크기가 '${labelMap[nextSize]}'(으)로 변경되었습니다.`);
+    }
+  }
+
+  fontSizeBtns.forEach(btn => {
+    btn.addEventListener("click", () => {
+      const size = btn.getAttribute("data-font-size");
+      if (size) applyFontSize(size, true);
+    });
+  });
+  applyFontSize(currentFontSize, false);
+
+  // 보조 입력칸(링크/PDF/기업명/메모) 입력 상태 요약 표시
+  function updateOptionalSummaryBadge() {
+    if (!optionalSummaryBadge) return;
+    const activeParts = [];
+    const urls = Array.from(document.querySelectorAll(".url-input")).map(i => i.value.trim()).filter(Boolean);
+    if (urls.length > 0) activeParts.push(`링크 ${urls.length}개`);
+    if (pdfFileInput && pdfFileInput.files && pdfFileInput.files.length > 0) activeParts.push("PDF 첨부됨");
+    if (brandNameInput && brandNameInput.value.trim()) activeParts.push(`기업명: ${brandNameInput.value.trim()}`);
+    if (keyPointInput && keyPointInput.value.trim()) activeParts.push("강조 메모 입력됨");
+
+    if (activeParts.length > 0) {
+      optionalSummaryBadge.textContent = `입력됨: ${activeParts.join(" · ")}`;
+      optionalSummaryBadge.classList.add("has-value");
+    } else {
+      optionalSummaryBadge.textContent = "웹사이트 링크 · PDF 웹진 · 기업명 · 강조 메모";
+      optionalSummaryBadge.classList.remove("has-value");
+    }
+  }
+
+  // 직접 수정한 내용이 있을 때 덮어쓰기 전 확인
+  function confirmDiscardManualEdits(actionLabel = "새로운 스타일로 기사를 다시 생성") {
+    if (!hasManualEdits) return true;
+    return window.confirm(`직접 수정한 기사 내용이 있습니다.\n${actionLabel}하면 수정한 내용이 초기화됩니다. 계속하시겠습니까?`);
+  }
 
   // GEO 콘텐츠 유형별 추천 MK Pick 카테고리 매핑
   function getRecommendedGeoCategory(format = currentGeoFormat, isMulti = isMultiBrandMode) {
@@ -1242,10 +1307,13 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  // 현재 기사 데이터 가져오기
+  // 현재 기사 데이터 가져오기 (저장된 기자명이 있으면 자동 반영)
   function getCurrentData() {
     if (!generatedArticleData) {
       generatedArticleData = getActiveTemplateData();
+      if (savedReporterName && generatedArticleData) {
+        generatedArticleData.reporter = savedReporterName;
+      }
     }
     return generatedArticleData;
   }
@@ -1268,37 +1336,70 @@ document.addEventListener("DOMContentLoaded", () => {
     return styleNames[plainIdx % styleNames.length];
   }
 
-  // 1. 제목 후보 카드 렌더링 (싱글 뷰 & 스타일 태그)
+  // 1. 제목 후보 카드 렌더링 (싱글 뷰 + 추천 제목 5개 한눈에 보기 리스트)
   function renderTitleCandidates() {
     const data = getCurrentData();
     const activeTitle = getActiveTitle();
     const currentIdx = data.selectedTitleIndex || 0;
-    const totalCount = data.titleCandidates ? data.titleCandidates.length : 4;
+    const candidates = data.titleCandidates || [];
+    const totalCount = candidates.length || 5;
+    const isCustom = !!(data.customTitle && data.customTitle.trim());
 
     if (activeTitleDisplay) {
       activeTitleDisplay.textContent = activeTitle;
     }
 
     if (titleStyleTag) {
-      if (data.customTitle && data.customTitle.trim()) {
+      if (isCustom) {
         titleStyleTag.textContent = "직접 수정한 제목";
-        titleStyleTag.style.backgroundColor = "#F0F0F0";
+        titleStyleTag.style.backgroundColor = "#F7F7F7";
         titleStyleTag.style.color = "#111111";
-        titleStyleTag.style.borderColor = "#D0D0D0";
+        titleStyleTag.style.borderColor = "#111111";
       } else {
         titleStyleTag.textContent = getTitleStyleName(data, currentIdx);
-        titleStyleTag.style.backgroundColor = "#FFF3EB";
-        titleStyleTag.style.color = "#FE6B00";
-        titleStyleTag.style.borderColor = "#FFD8C2";
+        titleStyleTag.style.backgroundColor = "#FFF4CC";
+        titleStyleTag.style.color = "#7A5B00";
+        titleStyleTag.style.borderColor = "#E0E0E0";
       }
     }
 
     if (titleCounterBadge) {
-      if (data.customTitle && data.customTitle.trim()) {
-        titleCounterBadge.textContent = "수정됨";
-      } else {
-        titleCounterBadge.textContent = `${currentIdx + 1} / ${totalCount}`;
-      }
+      titleCounterBadge.textContent = isCustom ? "수정됨" : `${currentIdx + 1} / ${totalCount}`;
+    }
+
+    if (toggleAllTitlesBtn) {
+      const isListOpen = allTitlesListContainer && !allTitlesListContainer.classList.contains("hidden");
+      toggleAllTitlesBtn.innerHTML = `추천 제목 ${totalCount}개 한눈에 보기 ${isListOpen ? "&#9652;" : "&#9662;"}`;
+      toggleAllTitlesBtn.classList.toggle("active", !!isListOpen);
+    }
+
+    if (allTitlesListContainer) {
+      allTitlesListContainer.innerHTML = candidates.map((cand, idx) => {
+        const isSelected = !isCustom && idx === currentIdx;
+        const styleLabel = getTitleStyleName(data, idx);
+        return `
+          <button type="button" class="title-option-item ${isSelected ? "active" : ""}" data-title-idx="${idx}">
+            <div class="title-option-left">
+              <span class="title-option-badge">${idx + 1}. ${styleLabel}</span>
+              <span class="title-option-text">${cand}</span>
+            </div>
+            <span class="title-option-check">${isSelected ? "✓ 선택됨" : "선택"}</span>
+          </button>
+        `;
+      }).join("");
+
+      allTitlesListContainer.querySelectorAll(".title-option-item").forEach(btn => {
+        btn.addEventListener("click", () => {
+          const idx = parseInt(btn.getAttribute("data-title-idx"), 10);
+          if (isNaN(idx)) return;
+          data.customTitle = "";
+          data.selectedTitleIndex = idx;
+          renderTitleCandidates();
+          renderPreviewHeaderOnly();
+          updateCharCount();
+          showToast(`✓ [${getTitleStyleName(data, idx)}] 제목이 선택되었습니다.`);
+        });
+      });
     }
 
     if (directTitleInput) {
@@ -1320,11 +1421,14 @@ document.addEventListener("DOMContentLoaded", () => {
     const readMinutes = Math.max(1, Math.round(totalChars / 500));
     charCountBadge.textContent = `본문 ${totalChars.toLocaleString()}자 · 읽기 약 ${readMinutes}분`;
     charCountBadge.title = `총 ${totalChars.toLocaleString()}자 (공백 제외 ${noSpaceChars.toLocaleString()}자) · 분당 500자 기준 읽기 약 ${readMinutes}분`;
+    renderFactQuickCheckBar();
   }
 
   function renderPreviewHeaderOnly() {
     const titleEl = document.getElementById("articleHeadlineTitle");
-    if (titleEl) titleEl.textContent = getActiveTitle();
+    if (titleEl) {
+      titleEl.innerHTML = `${getActiveTitle()}<span class="inline-edit-badge">제목 수정</span>`;
+    }
   }
 
   function extractBlockText(block) {
@@ -1412,12 +1516,83 @@ document.addEventListener("DOMContentLoaded", () => {
     return text;
   }
 
+  // 핵심 수치·날짜 추출용 정규식
+  const FACT_HIGHLIGHT_REGEX = /(\d+(?:\.\d+)?%|\d+(?:,\d{3})*(?:\.\d+)?(?:조\s*\d+(?:,\d{3})*억\s*원|조\s*원|억\s*원|만\s*원|천\s*원|원|달러|여?\s*명|명|개사|개국|개|곳|배|척|건|톤|가구|가정|종|잔|회|차|호|기|대|편|주년|TB|GB|MB|\s*TOPS)|\b\d{1,2}월\s*\d{1,2}일(?:\s*~\s*\d{1,2}월?\s*\d{1,2}일)?|\b\d{4}년(?:\s*\d{1,2}월)?)/g;
+
   // 팩트체크용 수치/키워드 자동 하이라이트 함수 (복사 텍스트에는 영향 없음)
   function applyFactHighlight(text) {
     if (!text || typeof text !== "string") return text;
-    // 숫자, %, 금액, 날짜, 인원수, 단위 등 핵심 수치 팩트 정규식
-    const factRegex = /(\d+(?:\.\d+)?%|\d+(?:,\d{3})*(?:\.\d+)?(?:조\s*\d+(?:,\d{3})*억\s*원|조\s*원|억\s*원|만\s*원|천\s*원|원|달러|여?\s*명|명|개사|개국|개|곳|배|척|건|톤|가구|가정|종|잔|회|차|호|기|대|편|주년|TB|GB|MB|\s*TOPS)|\b\d{1,2}월\s*\d{1,2}일(?:\s*~\s*\d{1,2}월?\s*\d{1,2}일)?|\b\d{4}년(?:\s*\d{1,2}월)?)/g;
-    return text.replace(factRegex, '<mark class="fact-highlight" title="팩트 확인: 원문 수치">$1</mark>');
+    return text.replace(FACT_HIGHLIGHT_REGEX, '<mark class="fact-highlight" title="팩트 확인: 원문 수치">$1</mark>');
+  }
+
+  // 원문 vs 기사 핵심 수치 1초 대조 바 렌더링
+  function renderFactQuickCheckBar() {
+    if (!factQuickCheckBar || !factChipsList || !factBarCount) return;
+    const data = getCurrentData();
+    if (!data) return;
+
+    let fullArticleText = `${getActiveTitle()} ${data.subtitle || ""} `;
+    data.blocks.filter(b => b.enabled).forEach(b => {
+      fullArticleText += `${extractBlockText(b)} `;
+    });
+
+    const matches = fullArticleText.match(FACT_HIGHLIGHT_REGEX) || [];
+    const uniqueFacts = uniq(matches).slice(0, 18);
+
+    factBarCount.textContent = `${uniqueFacts.length}개`;
+    if (uniqueFacts.length === 0) {
+      factChipsList.innerHTML = `<span style="font-size:12px; color:#757575;">검출된 숫자·일정 수치가 없습니다</span>`;
+      return;
+    }
+
+    factChipsList.innerHTML = uniqueFacts.map(fact => `
+      <button type="button" class="fact-chip-btn" data-fact="${fact.replace(/"/g, "&quot;")}" title="클릭하면 원문과 기사 본문에서 '${fact}' 위치를 동시에 찾아 비교합니다">${fact}</button>
+    `).join("");
+
+    factChipsList.querySelectorAll(".fact-chip-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const targetFact = btn.getAttribute("data-fact");
+        if (!targetFact) return;
+
+        factChipsList.querySelectorAll(".fact-chip-btn").forEach(b => b.classList.toggle("active", b === btn));
+
+        // 1. 오른쪽 기사 본문에서 해당 수치 강조 및 이동
+        if (toggleFactHighlight && !toggleFactHighlight.checked) {
+          toggleFactHighlight.checked = true;
+          document.body.classList.remove("fact-highlight-disabled");
+        }
+        const allMarks = Array.from(previewContainer.querySelectorAll("mark.fact-highlight"));
+        allMarks.forEach(m => m.classList.remove("fact-flash-target"));
+        const matchedMarks = allMarks.filter(m => m.textContent.trim() === targetFact.trim());
+        if (matchedMarks.length > 0) {
+          matchedMarks.forEach(m => m.classList.add("fact-flash-target"));
+          matchedMarks[0].scrollIntoView({ behavior: "smooth", block: "center" });
+        }
+
+        // 2. 왼쪽 보도자료 원문 입력창에서도 동일 수치 위치 찾아 선택·스크롤
+        const rawSource = pressReleaseText ? pressReleaseText.value : "";
+        const compactFact = targetFact.replace(/\s+/g, "");
+        let sourceIdx = rawSource.indexOf(targetFact);
+        let matchLen = targetFact.length;
+        if (sourceIdx === -1 && compactFact !== targetFact) {
+          sourceIdx = rawSource.indexOf(compactFact);
+          matchLen = compactFact.length;
+        }
+
+        if (sourceIdx !== -1 && pressReleaseText) {
+          pressReleaseText.focus({ preventScroll: true });
+          pressReleaseText.setSelectionRange(sourceIdx, sourceIdx + matchLen);
+          // 텍스트 영역 내부 스크롤을 해당 줄 근처로 이동
+          const textBefore = rawSource.slice(0, sourceIdx);
+          const lineNum = textBefore.split("\n").length;
+          const totalLines = Math.max(1, rawSource.split("\n").length);
+          pressReleaseText.scrollTop = Math.max(0, ((lineNum - 3) / totalLines) * pressReleaseText.scrollHeight);
+          showToast(`✓ '${targetFact}' — 왼쪽 원문과 오른쪽 기사 본문 위치를 동시에 표시했습니다.`);
+        } else {
+          showToast(`✓ 기사 본문에서 '${targetFact}' 위치로 이동했습니다.`);
+        }
+      });
+    });
   }
 
   // 2. 블록 엘리먼트 생성 (문단 이동 ▲/▼ 지원)
@@ -1960,6 +2135,7 @@ document.addEventListener("DOMContentLoaded", () => {
       }
 
       block.isEditing = false;
+      hasManualEdits = true;
       renderPreview();
       showToast(`'${block.label}' 내용이 수정되었습니다.`);
     });
@@ -1973,7 +2149,7 @@ document.addEventListener("DOMContentLoaded", () => {
     return blockItem;
   }
 
-  // 3. 미리보기 화면 렌더링
+  // 3. 미리보기 화면 렌더링 (부제·기자명·날짜·사진설명 직접 클릭 수정 지원)
   function renderPreview() {
     const data = getCurrentData();
     const activeTitle = getActiveTitle();
@@ -2021,33 +2197,31 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
 
-        <h1 class="mk-headline-title" id="articleHeadlineTitle">${activeTitle}</h1>
+        <h1 class="mk-headline-title inline-editable" id="articleHeadlineTitle" title="클릭하여 제목 직접 수정">${activeTitle}<span class="inline-edit-badge">제목 수정</span></h1>
 
         <div class="mk-meta-row" style="margin-bottom:12px;">
-          <span><strong>${data.reporter}</strong></span>
-          <span>${data.date}</span>
+          <span class="inline-editable" id="inlineReporterSpan" title="클릭하여 기자명 수정 (자동 기억됨)"><strong>${data.reporter}</strong><span class="inline-edit-badge">기자명 수정</span></span>
+          <span class="inline-editable" id="inlineDateSpan" title="클릭하여 날짜 수정">${data.date}<span class="inline-edit-badge">날짜 수정</span></span>
         </div>
 
-        <div class="mk-sub-headline-box">
-          ${data.subtitle}
-        </div>
+        <div class="mk-sub-headline-box inline-editable" id="inlineSubtitleBox" title="클릭하여 부제(서브 헤드라인) 직접 수정">${applyFactHighlight(data.subtitle)}<span class="inline-edit-badge">부제 수정</span></div>
 
         <div class="mk-lead-image-box">
           <div class="mk-lead-image-content">
             <span><strong>기사 대표 이미지 영역</strong></span>
             <span style="font-size:12px; color:#757575;">${data.leadImage.desc}</span>
           </div>
-          <div class="mk-lead-image-caption">${data.leadImage.caption}</div>
+          <div class="mk-lead-image-caption inline-editable" id="inlineCaptionBox" title="클릭하여 사진 설명(캡션) 직접 수정">${data.leadImage.caption}<span class="inline-edit-badge">사진설명 수정</span></div>
         </div>
       `;
     } else {
       headerHtml = `
         <span class="mk-category-path">${data.categoryPath}</span>
-        <h1 class="mk-headline-title" id="articleHeadlineTitle">${activeTitle}</h1>
+        <h1 class="mk-headline-title inline-editable" id="articleHeadlineTitle" title="클릭하여 제목 직접 수정">${activeTitle}<span class="inline-edit-badge">제목 수정</span></h1>
 
         <div class="mk-meta-row">
-          <span><strong>${data.reporter}</strong></span>
-          <span>업데이트 : ${data.date}</span>
+          <span class="inline-editable" id="inlineReporterSpan" title="클릭하여 기자명 수정 (자동 기억됨)"><strong>${data.reporter}</strong><span class="inline-edit-badge">기자명 수정</span></span>
+          <span class="inline-editable" id="inlineDateSpan" title="클릭하여 날짜 수정">업데이트 : ${data.date}<span class="inline-edit-badge">날짜 수정</span></span>
         </div>
 
         <div class="mk-article-utility-bar">
@@ -2059,16 +2233,14 @@ document.addEventListener("DOMContentLoaded", () => {
           </div>
         </div>
 
-        <div class="mk-sub-headline-box">
-          ${data.subtitle}
-        </div>
+        <div class="mk-sub-headline-box inline-editable" id="inlineSubtitleBox" title="클릭하여 부제(서브 헤드라인) 직접 수정">${applyFactHighlight(data.subtitle)}<span class="inline-edit-badge">부제 수정</span></div>
 
         <div class="mk-lead-image-box">
           <div class="mk-lead-image-content">
             <span><strong>기사 대표 보도사진 영역</strong></span>
             <span style="font-size:12px; color:#757575;">${data.leadImage.desc}</span>
           </div>
-          <div class="mk-lead-image-caption">${data.leadImage.caption}</div>
+          <div class="mk-lead-image-caption inline-editable" id="inlineCaptionBox" title="클릭하여 사진 설명(캡션) 직접 수정">${data.leadImage.caption}<span class="inline-edit-badge">사진설명 수정</span></div>
         </div>
       `;
     }
@@ -2082,6 +2254,136 @@ document.addEventListener("DOMContentLoaded", () => {
           const pickedCat = navEl.getAttribute("data-cat");
           if (!pickedCat || currentGeoCategory === pickedCat) return;
           applyGeoCategorySelection(pickedCat);
+        });
+      });
+    }
+
+    // 미리보기 내 제목 클릭 시 상단 제목 수정창 열기
+    const headlineEl = articleWrapper.querySelector("#articleHeadlineTitle");
+    if (headlineEl) {
+      headlineEl.addEventListener("click", () => {
+        if (titleEditBox) {
+          titleEditBox.classList.remove("hidden");
+          directTitleInput.value = getActiveTitle();
+          directTitleInput.focus();
+          titleEditBox.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      });
+    }
+
+    // 기자명 인라인 클릭 수정 (한 번 입력하면 localStorage에 기억)
+    const reporterSpan = articleWrapper.querySelector("#inlineReporterSpan");
+    if (reporterSpan) {
+      reporterSpan.addEventListener("click", (e) => {
+        if (e.target.tagName === "INPUT") return;
+        const currentVal = data.reporter || "매경비즈 기자";
+        reporterSpan.innerHTML = `<input type="text" class="inline-edit-input" value="${currentVal.replace(/"/g, "&quot;")}" style="width:150px;" placeholder="예: 홍길동 기자">`;
+        const inp = reporterSpan.querySelector("input");
+        inp.focus();
+        inp.select();
+        const commitReporter = () => {
+          const nextVal = inp.value.trim() || currentVal;
+          if (nextVal !== currentVal) {
+            data.reporter = nextVal;
+            savedReporterName = nextVal;
+            localStorage.setItem("mk_reporter_name", nextVal);
+            hasManualEdits = true;
+            showToast(`✓ 기자명이 '${nextVal}'(으)로 저장되었습니다. (다음 기사에도 자동 적용)`);
+          }
+          renderPreview();
+        };
+        inp.addEventListener("blur", commitReporter);
+        inp.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") { ev.preventDefault(); inp.blur(); }
+          if (ev.key === "Escape") { renderPreview(); }
+        });
+      });
+    }
+
+    // 날짜 인라인 클릭 수정
+    const dateSpan = articleWrapper.querySelector("#inlineDateSpan");
+    if (dateSpan) {
+      dateSpan.addEventListener("click", (e) => {
+        if (e.target.tagName === "INPUT") return;
+        const currentVal = data.date || "";
+        dateSpan.innerHTML = `<input type="text" class="inline-edit-input" value="${currentVal.replace(/"/g, "&quot;")}" style="width:170px;">`;
+        const inp = dateSpan.querySelector("input");
+        inp.focus();
+        inp.select();
+        const commitDate = () => {
+          const nextVal = inp.value.trim() || currentVal;
+          if (nextVal !== currentVal) {
+            data.date = nextVal;
+            hasManualEdits = true;
+            showToast("✓ 기사 날짜가 수정되었습니다.");
+          }
+          renderPreview();
+        };
+        inp.addEventListener("blur", commitDate);
+        inp.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") { ev.preventDefault(); inp.blur(); }
+          if (ev.key === "Escape") { renderPreview(); }
+        });
+      });
+    }
+
+    // 부제(서브 헤드라인) 인라인 클릭 수정
+    const subtitleBox = articleWrapper.querySelector("#inlineSubtitleBox");
+    if (subtitleBox) {
+      subtitleBox.addEventListener("click", (e) => {
+        if (e.target.tagName === "TEXTAREA" || e.target.tagName === "BUTTON") return;
+        const currentVal = data.subtitle || "";
+        subtitleBox.innerHTML = `
+          <textarea class="inline-edit-textarea" rows="2">${currentVal}</textarea>
+          <div style="display:flex; justify-content:flex-end; gap:6px; margin-top:6px;">
+            <button type="button" class="btn btn-primary-sm btn-save-sub">저장</button>
+            <button type="button" class="btn btn-secondary-sm btn-cancel-sub">취소</button>
+          </div>
+        `;
+        const ta = subtitleBox.querySelector("textarea");
+        const saveSubBtn = subtitleBox.querySelector(".btn-save-sub");
+        const cancelSubBtn = subtitleBox.querySelector(".btn-cancel-sub");
+        ta.focus();
+        saveSubBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          const nextVal = ta.value.trim();
+          if (nextVal) {
+            data.subtitle = nextVal;
+            hasManualEdits = true;
+            showToast("✓ 부제(서브 헤드라인)가 수정되었습니다.");
+          }
+          renderPreview();
+        });
+        cancelSubBtn.addEventListener("click", (ev) => {
+          ev.stopPropagation();
+          renderPreview();
+        });
+      });
+    }
+
+    // 사진 설명(캡션) 인라인 클릭 수정
+    const captionBox = articleWrapper.querySelector("#inlineCaptionBox");
+    if (captionBox) {
+      captionBox.addEventListener("click", (e) => {
+        if (e.target.tagName === "INPUT") return;
+        const currentVal = (data.leadImage && data.leadImage.caption) || "";
+        captionBox.innerHTML = `<input type="text" class="inline-edit-input" value="${currentVal.replace(/"/g, "&quot;")}" style="width:100%;">`;
+        const inp = captionBox.querySelector("input");
+        inp.focus();
+        inp.select();
+        const commitCaption = () => {
+          const nextVal = inp.value.trim() || currentVal;
+          if (data.leadImage && nextVal !== currentVal) {
+            data.leadImage.caption = nextVal;
+            hasManualEdits = true;
+            showToast("✓ 사진 설명(캡션)이 수정되었습니다.");
+          }
+          renderPreview();
+        };
+        inp.addEventListener("blur", commitCaption);
+        inp.addEventListener("keydown", (ev) => {
+          if (ev.key === "Enter") { ev.preventDefault(); inp.blur(); }
+          if (ev.key === "Escape") { renderPreview(); }
         });
       });
     }
@@ -2129,25 +2431,33 @@ document.addEventListener("DOMContentLoaded", () => {
   // 4. 전체 화면 새로고침
   function updateAllViews() {
     syncGeoCategoryUI();
+    updateOptionalSummaryBadge();
     renderTitleCandidates();
     renderPreview();
   }
 
   // 5. 1번 자료를 바탕으로 새 기사 강제 생성 실행
-  function triggerGenerateArticle() {
+  function triggerGenerateArticle(skipConfirm = false) {
     const rawText = pressReleaseText.value.trim();
     if (!rawText) {
       showToast("1번에 보도자료를 먼저 입력해 주세요. (또는 상단 예시 버튼을 눌러보세요)");
       return;
     }
+    if (!skipConfirm && !confirmDiscardManualEdits("기사를 다시 생성")) {
+      return;
+    }
+    hasManualEdits = false;
     generatedArticleData = getActiveTemplateData();
+    if (savedReporterName && generatedArticleData) {
+      generatedArticleData.reporter = savedReporterName;
+    }
     updateAllViews();
     showToast("✓ 1번 자료를 분석하여 매경 기사가 성공적으로 자동 조립되었습니다!");
   }
 
   // 생성 버튼 클릭
   if (generateArticleBtn) {
-    generateArticleBtn.addEventListener("click", triggerGenerateArticle);
+    generateArticleBtn.addEventListener("click", () => triggerGenerateArticle(false));
   }
 
   // 6. 보도자료 텍스트 입력 시 실시간/자동 반영 (디바운스 처리)
@@ -2171,6 +2481,7 @@ document.addEventListener("DOMContentLoaded", () => {
     multiBrandIntro = "";
     if (multiBrandPanel) multiBrandPanel.classList.add("hidden");
     if (brandCardsContainer) brandCardsContainer.innerHTML = "";
+    updateOptionalSummaryBadge();
     showToast("새 자료가 입력되어 예시의 기업명·메모·링크를 비웠습니다.");
   }
 
@@ -2180,22 +2491,34 @@ document.addEventListener("DOMContentLoaded", () => {
     if (inputDebounceTimer) clearTimeout(inputDebounceTimer);
     inputDebounceTimer = setTimeout(() => {
       if (pressReleaseText.value.trim().length > 20) {
+        hasManualEdits = false;
         generatedArticleData = getActiveTemplateData();
+        if (savedReporterName && generatedArticleData) {
+          generatedArticleData.reporter = savedReporterName;
+        }
         updateAllViews();
       }
     }, 600);
   });
 
   brandNameInput.addEventListener("input", () => {
+    updateOptionalSummaryBadge();
     if (pressReleaseText.value.trim().length > 20) {
       generatedArticleData = getActiveTemplateData();
+      if (savedReporterName && generatedArticleData) {
+        generatedArticleData.reporter = savedReporterName;
+      }
       updateAllViews();
     }
   });
 
   keyPointInput.addEventListener("input", () => {
+    updateOptionalSummaryBadge();
     if (pressReleaseText.value.trim().length > 20) {
       generatedArticleData = getActiveTemplateData();
+      if (savedReporterName && generatedArticleData) {
+        generatedArticleData.reporter = savedReporterName;
+      }
       updateAllViews();
     }
   });
@@ -2225,7 +2548,21 @@ document.addEventListener("DOMContentLoaded", () => {
 
   copyAllTopBtn.addEventListener("click", copyEntireArticle);
 
-  // 8. 제목 새로고침(다른 스타일 추천) 이벤트
+  // 8-1. 추천 제목 5개 한눈에 보기 토글
+  if (toggleAllTitlesBtn && allTitlesListContainer) {
+    toggleAllTitlesBtn.addEventListener("click", () => {
+      allTitlesListContainer.classList.toggle("hidden");
+      renderTitleCandidates();
+    });
+  }
+  if (activeTitleCard && allTitlesListContainer) {
+    activeTitleCard.addEventListener("click", () => {
+      allTitlesListContainer.classList.toggle("hidden");
+      renderTitleCandidates();
+    });
+  }
+
+  // 8-2. 제목 새로고침(다음 제목) 이벤트
   if (refreshTitleBtn) {
     refreshTitleBtn.addEventListener("click", () => {
       const data = getCurrentData();
@@ -2269,6 +2606,7 @@ document.addEventListener("DOMContentLoaded", () => {
     }
     const data = getCurrentData();
     data.customTitle = newTitle;
+    hasManualEdits = true;
     titleEditBox.classList.add("hidden");
     renderTitleCandidates();
     renderPreviewHeaderOnly();
@@ -2288,7 +2626,9 @@ document.addEventListener("DOMContentLoaded", () => {
     tab.addEventListener("click", () => {
       const selectedStyle = tab.getAttribute("data-style");
       if (currentMainStyle === selectedStyle) return;
+      if (!confirmDiscardManualEdits("기사 스타일을 변경")) return;
 
+      hasManualEdits = false;
       currentMainStyle = selectedStyle;
 
       mainTabs.forEach(t => {
@@ -2305,6 +2645,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       titleEditBox.classList.add("hidden");
       generatedArticleData = getActiveTemplateData();
+      if (savedReporterName && generatedArticleData) {
+        generatedArticleData.reporter = savedReporterName;
+      }
       updateAllViews();
     });
   });
@@ -2314,7 +2657,9 @@ document.addEventListener("DOMContentLoaded", () => {
     tab.addEventListener("click", () => {
       const selectedFormat = tab.getAttribute("data-geo-format");
       if (currentGeoFormat === selectedFormat) return;
+      if (!confirmDiscardManualEdits("GEO 세부 형식을 변경")) return;
 
+      hasManualEdits = false;
       currentGeoFormat = selectedFormat;
       currentGeoCategory = getRecommendedGeoCategory(currentGeoFormat, isMultiBrandMode);
 
@@ -2326,6 +2671,9 @@ document.addEventListener("DOMContentLoaded", () => {
 
       titleEditBox.classList.add("hidden");
       generatedArticleData = getActiveTemplateData();
+      if (savedReporterName && generatedArticleData) {
+        generatedArticleData.reporter = savedReporterName;
+      }
       updateAllViews();
     });
   });
@@ -2348,14 +2696,21 @@ document.addEventListener("DOMContentLoaded", () => {
       <button type="button" class="btn-icon-remove remove-url-btn" title="삭제">&times;</button>
     `;
     urlListContainer.appendChild(urlItem);
+    const newInput = urlItem.querySelector(".url-input");
+    if (newInput) newInput.addEventListener("input", updateOptionalSummaryBadge);
 
     urlItem.querySelector(".remove-url-btn").addEventListener("click", () => {
       urlItem.remove();
+      updateOptionalSummaryBadge();
       if (pressReleaseText.value.trim().length > 20) {
         generatedArticleData = getActiveTemplateData();
         updateAllViews();
       }
     });
+  });
+
+  document.querySelectorAll(".url-input").forEach(inp => {
+    inp.addEventListener("input", updateOptionalSummaryBadge);
   });
 
   document.querySelectorAll(".remove-url-btn").forEach(btn => {
@@ -2366,6 +2721,7 @@ document.addEventListener("DOMContentLoaded", () => {
       } else {
         parent.querySelector(".url-input").value = "";
       }
+      updateOptionalSummaryBadge();
     });
   });
 
@@ -2501,6 +2857,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 15. 예시 자료 1 (신한카드 ‘컬리 신한카드’ - GEO 정보성 적립률 혜택형 / 12170377)
   if (loadSample1Btn) {
     loadSample1Btn.addEventListener("click", () => {
+      if (!confirmDiscardManualEdits("예시 자료를 불러와 새 기사를 생성")) return;
       pressReleaseText.value = `[보도자료] “멤버십 더해 최대 14% 적립”…신한카드, ‘컬리 신한카드’ 출시
 
 신한카드(대표 문동권)가 장보기 앱 컬리와 손잡고 컬리 특화 PLCC(상업자 표시 신용카드)인 ‘컬리 신한카드’를 전격 출시했다고 10일 밝혔다.
@@ -2527,13 +2884,14 @@ document.addEventListener("DOMContentLoaded", () => {
       geoFormatContainer.classList.remove("hidden");
       subTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-geo-format") === "info"));
 
-      triggerGenerateArticle();
+      triggerGenerateArticle(true);
     });
   }
 
   // 16. 예시 자료 2 (삼양식품 태국 ‘Love Korea 2026’ - GEO 기업뉴스 5W1H 행사형 / 12133315)
   if (loadSample2Btn) {
     loadSample2Btn.addEventListener("click", () => {
+      if (!confirmDiscardManualEdits("예시 자료를 불러와 새 기사를 생성")) return;
       pressReleaseText.value = `[보도자료] 삼양식품, 태국 ‘Love Korea 2026’ 참가… K-푸드 매운맛 열풍 잇는다
 
 삼양식품(대표 김정수)이 태국 방콕 대형 쇼핑몰 센트럴월드(CentralwOrld)에서 열린 ‘Love Korea 2026’ 행사에 공식 참가해 글로벌 불닭 브랜드와 신규 매운 국물라면 ‘맵탱’ 홍보관을 성황리에 운영했다고 12일 밝혔다.
@@ -2561,13 +2919,14 @@ document.addEventListener("DOMContentLoaded", () => {
       geoFormatContainer.classList.remove("hidden");
       subTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-geo-format") === "story"));
 
-      triggerGenerateArticle();
+      triggerGenerateArticle(true);
     });
   }
 
   // 17. 예시 자료 3 (서울시오페라단 〈라보엠〉 - 기사식 광고 공연·문화형 / 12163588)
   if (loadSample3Btn) {
     loadSample3Btn.addEventListener("click", () => {
+      if (!confirmDiscardManualEdits("예시 자료를 불러와 새 기사를 생성")) return;
       pressReleaseText.value = `[보도자료] ‘전석 매진’ 신화 쓴 서울시오페라단 〈라보엠〉, 세종문화회관 대극장 귀환
 
 세종문화회관(사장 안호상) 서울시오페라단(단장 박혜진)이 2024년 객석 점유율 98%를 기록하며 전석 매진 신화를 쓴 오페라 〈라보엠〉을 오는 11월 20일부터 23일까지 세종문화회관 대극장에서 다시 선보인다.
@@ -2594,13 +2953,14 @@ document.addEventListener("DOMContentLoaded", () => {
       mainTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-style") === "ad"));
       geoFormatContainer.classList.add("hidden");
 
-      triggerGenerateArticle();
+      triggerGenerateArticle(true);
     });
   }
 
   // 18. 예시 자료 4 (한국인터넷전문가협회 아이어워즈 2026 - 기사식 광고 IT·어워드형 / 12149000)
   if (loadSample4Btn) {
     loadSample4Btn.addEventListener("click", () => {
+      if (!confirmDiscardManualEdits("예시 자료를 불러와 새 기사를 생성")) return;
       pressReleaseText.value = `[보도자료] 한국인터넷전문가협회 ‘아이어워즈 2026’ 수상후보 공모 시작
 
 사단법인 한국인터넷전문가협회(KIPFA, 협회장 민승재)와 아이어워즈위원회(i-AWARDS, 위원장 유인호)가 대한민국 인터넷서비스 혁신을 이끈 주역을 찾는 ‘아이어워즈 2026’ 수상후보 공모를 시작한다고 밝혔다. 접수 기간은 오는 9월 1일부터 10월 31일까지며, 공식 홈페이지에서 신청할 수 있다.
@@ -2626,7 +2986,7 @@ document.addEventListener("DOMContentLoaded", () => {
       mainTabs.forEach(t => t.classList.toggle("active", t.getAttribute("data-style") === "ad"));
       geoFormatContainer.classList.add("hidden");
 
-      triggerGenerateArticle();
+      triggerGenerateArticle(true);
     });
   }
 
@@ -2653,7 +3013,7 @@ document.addEventListener("DOMContentLoaded", () => {
       currentGeoCategory = getRecommendedGeoCategory(currentGeoFormat, true);
       if (multiBrandPanel) multiBrandPanel.classList.remove("hidden");
       renderBrandCards();
-      triggerGenerateArticle();
+      triggerGenerateArticle(true);
       showToast(`✓ 본문 속 ${multiBrandList.length}개 브랜드를 감지하여 카드로 분리했습니다!`);
     });
   }
@@ -2675,7 +3035,7 @@ document.addEventListener("DOMContentLoaded", () => {
         content: "행사 상세 설명 및 일정 등을 입력하세요."
       });
       renderBrandCards();
-      triggerGenerateArticle();
+      triggerGenerateArticle(true);
       showToast("새 브랜드 카드가 추가되었습니다.");
     });
   }
@@ -2686,7 +3046,7 @@ document.addEventListener("DOMContentLoaded", () => {
       isMultiBrandMode = false;
       currentGeoCategory = getRecommendedGeoCategory(currentGeoFormat, false);
       if (multiBrandPanel) multiBrandPanel.classList.add("hidden");
-      triggerGenerateArticle();
+      triggerGenerateArticle(true);
       showToast("단일 브랜드 일반 모드로 전환되었습니다.");
     });
   }
@@ -2697,7 +3057,7 @@ document.addEventListener("DOMContentLoaded", () => {
     multiBrandTheme.addEventListener("input", () => {
       if (themeDebounce) clearTimeout(themeDebounce);
       themeDebounce = setTimeout(() => {
-        if (isMultiBrandMode) triggerGenerateArticle();
+        if (isMultiBrandMode) triggerGenerateArticle(true);
       }, 400);
     });
   }
@@ -2705,6 +3065,7 @@ document.addEventListener("DOMContentLoaded", () => {
   // 20. 예시 자료 5 (10월 10일 임산부의 날 5개사 모음 - 라운드업 종합 기획 / 12171568)
   if (loadSample5Btn) {
     loadSample5Btn.addEventListener("click", () => {
+      if (!confirmDiscardManualEdits("예시 자료를 불러와 새 기사를 생성")) return;
       pressReleaseText.value = `[기획 보도자료 종합] 10월 10일 ‘임산부의 날’ 유래와 주요 기업들의 따뜻한 동행
 
 10월 10일은 임신 10개월을 기념하는 법정기념일인 ‘임산부의 날’입니다. 2005년 모자보건법 개정으로 제정되어 출산 친화적 환경과 임산부 배려 문화를 확산하고 있습니다. 올해 임산부의 날을 맞아 각 기업들이 선보인 따뜻한 나눔 캠페인과 실속 프로모션을 총정리합니다.
@@ -2733,6 +3094,7 @@ KB캐피탈이 임산부의 날을 맞아 복지 사각지대 위기임산부 60
 
       fileUploadStatus.textContent = "✓ 예시 5 (임산부의 날 5개사) 자료가 입력되었습니다.";
 
+      hasManualEdits = false;
       // 자동 분리 버튼 실행
       if (autoSplitBrandsBtn) {
         autoSplitBrandsBtn.click();
@@ -2742,6 +3104,8 @@ KB캐피탈이 임산부의 날을 맞아 복지 사각지대 위기임산부 60
 
   // 21. 지우기
   clearInputsBtn.addEventListener("click", () => {
+    if (!confirmDiscardManualEdits("입력창을 초기화")) return;
+    hasManualEdits = false;
     pressReleaseText.value = "";
     pressReleaseFile.value = "";
     fileUploadStatus.textContent = "";
