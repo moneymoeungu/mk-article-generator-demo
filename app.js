@@ -434,13 +434,18 @@ document.addEventListener("DOMContentLoaded", () => {
     return orgMatch ? orgMatch[1] : "해당 기업";
   }
 
-  // 문단 성격 분류 → 소제목 결정에 사용
+  // 문단 성격 분류 → 문단 내용에 어울리는 소제목 결정에 사용
   function classifyParagraph(p, i) {
     if (i === 0) return "lead";
-    if (/[“"]/.test(p)) return "quote";
+    if (/[“"]/.test(p) && /말했다|밝혔다|전했다|강조했다|설명했다|덧붙였다/.test(p)) return "quote";
+    if (/이벤트|프로모션|할인|캐시백|적립금|추첨|증정|경품|사은품|무료\s*제공|1\+1|특가/.test(p)) return "event";
+    if (/온라인\s*스토어|오프라인\s*매장|공식\s*홈페이지|예매|접수|신청\s*방법|판매를\s*시작|매장\s*\d+곳|출시한\s*뒤/.test(p)) return "channel";
+    if (/화보|앰배서더|모델|캠페인|전시|공연|무대|프로그램|콜라보|협업해/.test(p) && !/소재|아웃솔|루즈\s*핏/.test(p)) return "campaign";
+    if (/소재|디자인|실루엣|기능|성능|적용해|탑재|콘셉트|라인업|구성됐|완성했|살렸다|더했다/.test(p)) return "feature";
     if (/기대|전망|계획|목표|방침|발판|의미|강화할|확대할|나설/.test(p)) return "outlook";
     if (T_AMOUNT.test(p) || T_COUNT.test(p)) return "scale";
     if (T_DATE.test(p) || /일정|인도|개최|기간|예정|시작/.test(p)) return "schedule";
+    if (/[“"]/.test(p)) return "quote";
     return "detail";
   }
 
@@ -448,17 +453,58 @@ document.addEventListener("DOMContentLoaded", () => {
   function groupSections(paras) {
     const sections = [];
     paras.forEach((p, i) => {
-      const kind = classifyParagraph(p, i);
+      const cleanP = (p || "").trim();
+      // 실제 글자(한글·영문·숫자)가 2자 미만인 빈 줄·특수공백 줄은 무시
+      if (!/[가-힣A-Za-z0-9]{2,}/.test(cleanP)) return;
+      const kind = classifyParagraph(cleanP, i);
       const last = sections[sections.length - 1];
-      if (last && last.kind === kind && last.paras.length < 3) last.paras.push(p);
-      else sections.push({ kind, paras: [p] });
+      if (last && last.kind === kind && last.paras.length < 3) {
+        last.paras.push(cleanP);
+      } else {
+        sections.push({ kind, paras: [cleanP] });
+      }
     });
     return sections;
   }
 
-  const SECTION_LABELS = { lead: "도입 (리드)", scale: "규모·조건", schedule: "일정", outlook: "의미·전망", quote: "관계자 발언", detail: "세부 내용" };
-  const GEO_HEADINGS = { lead: "무엇을 발표했나?", scale: "규모와 조건은 어떻게 되나?", schedule: "일정은 어떻게 되나?", outlook: "어떤 의미와 전망이 있나?", quote: "관계자는 어떻게 설명했나?", detail: "세부 내용은?" };
-  const AD_HEADINGS = { lead: "", scale: "주요 규모와 조건", schedule: "추진 일정", outlook: "의미와 전망", quote: "관계자 코멘트", detail: "세부 내용" };
+  const SECTION_LABELS = {
+    lead: "도입 (리드)",
+    feature: "제품·특징",
+    campaign: "협업·캠페인",
+    channel: "출시·판매처",
+    event: "이벤트·혜택",
+    scale: "규모·수치",
+    schedule: "추진 일정",
+    outlook: "의미·전망",
+    quote: "관계자 발언",
+    detail: "상세 내용"
+  };
+
+  const GEO_HEADINGS = {
+    lead: ["무엇을 발표했나?"],
+    feature: ["주요 제품과 특징은 무엇인가?", "어떤 디자인과 기능을 적용했나?"],
+    campaign: ["눈여겨볼 협업·캠페인 포인트는?", "이번 프로젝트의 배경과 특징은?"],
+    channel: ["어디서 언제 만나볼 수 있나?", "온·오프라인 출시 일정과 판매처는?"],
+    event: ["어떤 이벤트와 혜택이 마련됐나?", "참여 방법과 추가 혜택은?"],
+    scale: ["규모와 조건은 어떻게 되나?", "주요 수치와 구성은 어떻게 되나?"],
+    schedule: ["일정은 어떻게 되나?", "향후 진행 일정은?"],
+    outlook: ["어떤 의미와 전망이 있나?", "향후 계획과 기대 효과는?"],
+    quote: ["관계자는 어떻게 설명했나?", "현장 관계자의 핵심 코멘트는?"],
+    detail: ["구체적인 배경과 내용은?", "추가로 주목할 핵심 내용은?", "세부 구성과 특징은?"]
+  };
+
+  const AD_HEADINGS = {
+    lead: [""],
+    feature: ["주요 제품 구성 및 세부 특징", "핵심 디자인과 차별화 포인트"],
+    campaign: ["주목할 만한 협업 및 캠페인 스토리", "브랜드 시너지와 주요 프로그램"],
+    channel: ["온·오프라인 출시 일정 및 판매처", "구매 및 이용 안내"],
+    event: ["출시 기념 이벤트 및 고객 혜택", "주요 프로모션 및 참여 혜택"],
+    scale: ["주요 규모와 조건", "핵심 수치 및 세부 구성"],
+    schedule: ["주요 추진 일정", "세부 진행 일정"],
+    outlook: ["의미와 향후 전망", "기대 효과 및 향후 계획"],
+    quote: ["관계자 코멘트", "주요 관계자 발언"],
+    detail: ["주요 배경 및 상세 내용", "세부 내용 및 특징", "주목할 포인트"]
+  };
 
   // ==========================================================================
   // GEO 최적화: 팬아웃 쿼리 기반 FAQ (최대 10개)
@@ -487,7 +533,7 @@ document.addEventListener("DOMContentLoaded", () => {
 
     // 질문 주제어: 원문 첫 문장에서 '계약·출시·개최' 같은 핵심 행위어를 찾아 질문에 넣는다
     const leadS = (sentences || [])[0] || "";
-    const topicMatch = leadS.match(/계약|협약|MOU|출시|개최|수주|투자|인수|합병|선정|수상|공개|오픈|론칭|캠페인|행사|전시|사업|공모/);
+    const topicMatch = leadS.match(/계약|협약|MOU|출시|발매|개최|수주|투자|인수|합병|선정|수상|공개|오픈|론칭|캠페인|행사|전시|사업|공모/);
     const T = topicMatch ? `${company} ${topicMatch[0]}` : company;
 
     // 질문별 키워드를 우선순위대로 검사해 가장 관련 높은 원문 문장을 답으로 고른다
@@ -508,15 +554,15 @@ document.addEventListener("DOMContentLoaded", () => {
     const kw = (...words) => words.map(w => (w instanceof RegExp ? w : new RegExp(escapeRegExp(w))));
     const specs = [
       { q: `${josa(company, "은", "는")} 이번에 무엇을 발표했나요?`, keys: [new RegExp("^" + escapeRegExp(leadS.slice(0, 10)))] },
-      { q: (a) => /캐시백|할인|적립|혜택|무료|증정/.test(a) ? `${T} 혜택은 무엇인가요?` : `${T} 규모는 얼마나 되나요?`, keys: kw("규모", T_AMOUNT) },
-      { q: `${T}, 언제 어떤 일정으로 진행되나요?`, keys: kw("일정", "기간", T_DATE, "인도", "개최", "예정") },
-      { q: `${T}, 어디에서 진행되나요?`, keys: location ? kw(location) : [/[가-힣A-Za-z0-9)]\s*에서\s*(?:건조|개최|진행|열리|생산|운영|선보)/, /[가-힣]+\s+소재\s+[가-힣]+/] },
-      { q: `${josa(T, "은", "는")} 어떤 의미가 있나요?`, keys: kw("의미", "최초", "처음", "첫", "사례", "기록", "평가") },
+      { q: (a) => /캐시백|할인|적립|혜택|무료|증정|이벤트/.test(a) ? `${T} 혜택이나 이벤트는 무엇인가요?` : `${T} 규모는 얼마나 되나요?`, keys: kw("규모", "이벤트", "증정", T_AMOUNT) },
+      { q: `${T}, 언제 어떤 일정으로 진행되나요?`, keys: kw("일정", "기간", T_DATE, "인도", "개최", "예정", "발매", "출시") },
+      { q: `${T}, 어디에서 진행되나요?`, keys: location ? kw(location) : [/[가-힣A-Za-z0-9)]\s*에서\s*(?:건조|개최|진행|열리|생산|운영|선보|판매|만나)/, /온라인\s*스토어|오프라인\s*매장/, /[가-힣]+\s+소재\s+[가-힣]+/] },
+      { q: `${josa(T, "은", "는")} 어떤 의미가 있나요?`, keys: kw("의미", "최초", "처음", "첫", "사례", "기록", "평가", "콘셉트", "재해석") },
       { q: `${T} 이후 기대되는 효과는 무엇인가요?`, keys: kw("기대", "전망", "목표", "계획") },
-      { q: `${T}에 추가 조건이나 옵션이 있나요?`, keys: kw("옵션", "조건", "추가", "경우") },
-      { q: `${T}의 대상이나 파트너는 누구인가요?`, keys: kw("대상", "파트너", "협력", "함께", "소비자", "고객", "선주") },
+      { q: `${T}에 추가 조건이나 옵션이 있나요?`, keys: kw("옵션", "조건", "추가", "경우", "색상") },
+      { q: `${T}의 대상이나 파트너는 누구인가요?`, keys: kw("대상", "파트너", "협력", "협업", "함께", "소비자", "고객", "선주") },
       { q: `관계자는 ${T}에 대해 뭐라고 말했나요?`, keys: kw(/[“"]/) },
-      { q: `${josa(company, "은", "는")} 어떤 회사인가요?`, keys: [new RegExp(escapeRegExp(company) + ".*(기업|회사|업체|설립|전문)")] },
+      { q: `${josa(company, "은", "는")} 어떤 회사인가요?`, keys: [new RegExp(escapeRegExp(company) + ".*(기업|회사|업체|설립|전문|공식)")] },
       { q: `${T}, 수치로 보면 어떤가요?`, keys: [T_COUNT] }
     ];
     const list = [];
@@ -548,8 +594,13 @@ document.addEventListener("DOMContentLoaded", () => {
       return null;
     }
 
-    // 1. 보도자료 맨 앞의 제목·부제(마침표 없는 짧은 줄)와 본문, 하단 주석(※/사진설명) 분리
-    const rawLines = rawText.split("\n").map(l => l.trim()).filter(l => l.length > 0);
+    // 1. 보도자료 내 보이지 않는 특수 공백(제로폭 공백, 한글 채움문자 등)과 빈 줄을 먼저 깨끗하게 제거
+    const cleanedRawText = rawText.replace(/[\u200B-\u200F\u2028-\u202F\u2060-\u206F\uFEFF\u3164\uFFA0\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g, "");
+    const rawLines = cleanedRawText
+      .split(/\r\n|\r|\n/)
+      .map(l => l.trim())
+      .filter(l => /[가-힣A-Za-z0-9]{2,}/.test(l));
+
     let extractedPhotoCaption = "";
     let extractedPhotoDesc = "";
     const lines = [];
@@ -573,14 +624,20 @@ document.addEventListener("DOMContentLoaded", () => {
     let bodyStart = 0;
     while (bodyStart < lines.length && headLines.length < 3) {
       const l = lines[bodyStart].replace(/^\[보도자료\]\s*/, "").trim();
-      if (!l) { bodyStart++; continue; }
+      if (!l || !/[가-힣A-Za-z0-9]{2,}/.test(l)) { bodyStart++; continue; }
       if (/[.!?”"]$/.test(l) || l.length > 80) break;
       headLines.push(l.replace(/^[-–▶■●◆]\s*/, ""));
       bodyStart++;
     }
-    let bodyParas = lines.slice(bodyStart).filter(l => !/^\[.*\]$/.test(l));
+    let bodyParas = lines
+      .slice(bodyStart)
+      .map(l => l.replace(/^\[보도자료\]\s*/, "").trim())
+      .filter(l => !/^\[.*\]$/.test(l) && /[가-힣A-Za-z0-9]{2,}/.test(l));
     if (bodyParas.length === 0) bodyParas = headLines.splice(0);
-    bodyParas = bodyParas.map(polishParagraph); // 문장 끝맺음을 기사체로 (내용은 그대로)
+    bodyParas = bodyParas
+      .map(polishParagraph)
+      .map(p => p.trim())
+      .filter(p => /[가-힣A-Za-z0-9]{2,}/.test(p)); // 문장 끝맺음을 기사체로 (빈 문단은 완전 제거)
 
     const bodyText = bodyParas.join("\n");
     const sentences = splitSentences(bodyParas);
@@ -592,7 +649,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const dates = uniq(bodyText.match(RE_DATE) || []);
     const productMatch = rawText.match(/[‘〈<「『]([^’〉>」』\n]{2,30})[’〉>」』]/);
     const product = productMatch ? productMatch[1].trim() : "";
-    const locationMatch = bodyText.match(/[가-힣A-Za-z0-9]+(?:엘타워|대극장|센트럴월드|코엑스|킨텍스|세종문화회관|컨벤션센터|호텔|플라자|DDP|미술관|박물관|갤러리|전시장|아트센터|백화점|공연장)/);
+    const locationMatch = bodyText.match(/[가-힣A-Za-z0-9]+(?:엘타워|대극장|센트럴월드|코엑스|킨텍스|세종문화회관|컨벤션센터|호텔|플라자|DDP|미술관|박물관|갤러리|전시장|아트센터|백화점|공연장|메가스토어)/);
     const sojaeMatch = bodyText.match(/(\S+\s\S+)\s소재\s([^\s,.]+?)(?:에서|에|의)?(?:\s(조선소|공장|센터|본사|연구소|캠퍼스|사옥))?(?=[\s,.에의])/);
     const location = locationMatch ? locationMatch[0]
       : (sojaeMatch ? `${sojaeMatch[1]} 소재 ${sojaeMatch[2]}${sojaeMatch[3] ? " " + sojaeMatch[3] : ""}` : "");
@@ -609,16 +666,37 @@ document.addEventListener("DOMContentLoaded", () => {
     const findSentence = (re) => sentences.find(s => re.test(s));
     const notFound = "자료에 없음 (확인 필요)";
 
-    // 3. 원문 문단 전체를 순서대로 섹션화 (누락 없음)
+    // 3. 원문 문단 전체를 순서대로 섹션화 (빈 블록 차단 + 동일 소제목 중복 방지)
     const sections = groupSections(bodyParas);
-    const sectionBlocks = (style, prefix) => sections.map((sec, i) => ({
-      id: `${prefix}_sec_${i}`,
-      label: SECTION_LABELS[sec.kind],
-      type: "text",
-      title: style === "geo" ? GEO_HEADINGS[sec.kind] : (i === 0 ? "" : AD_HEADINGS[sec.kind]),
-      enabled: true,
-      content: sec.paras.join("\n\n")
-    }));
+    const sectionBlocks = (style, prefix) => {
+      const usedTitles = new Set();
+      return sections
+        .map((sec, i) => {
+          const contentText = (sec.paras || []).map(p => p.trim()).filter(Boolean).join("\n\n");
+          if (!/[가-힣A-Za-z0-9]{2,}/.test(contentText)) return null;
+
+          const pool = style === "geo"
+            ? (GEO_HEADINGS[sec.kind] || GEO_HEADINGS.detail)
+            : (i === 0 ? [""] : (AD_HEADINGS[sec.kind] || AD_HEADINGS.detail));
+
+          let chosenTitle = pool.find(t => !usedTitles.has(t));
+          if (chosenTitle === undefined) {
+            const fallbackPool = style === "geo" ? GEO_HEADINGS.detail : AD_HEADINGS.detail;
+            chosenTitle = fallbackPool.find(t => !usedTitles.has(t)) || "";
+          }
+          if (chosenTitle) usedTitles.add(chosenTitle);
+
+          return {
+            id: `${prefix}_sec_${i}`,
+            label: SECTION_LABELS[sec.kind] || "본문",
+            type: "text",
+            title: chosenTitle,
+            enabled: true,
+            content: contentText
+          };
+        })
+        .filter(Boolean);
+    };
 
     // 날짜 포맷
     const today = new Date();
@@ -2391,6 +2469,7 @@ document.addEventListener("DOMContentLoaded", () => {
     const blocksContainer = document.createElement("div");
     blocksContainer.className = "article-blocks-container";
 
+    data.blocks = data.blocks.filter(b => b.type !== "section" || (b.content && /[가-힣A-Za-z0-9]/.test(b.content)));
     data.blocks.forEach((block, idx) => {
       const blockEl = createBlockElement(block, isGeoMode, idx, data.blocks.length);
       blocksContainer.appendChild(blockEl);
